@@ -130,6 +130,7 @@ class MarketFlowState(TypedDict):
     sub_index_data: dict | None    # 子指数详情
     kline_data: list | None        # K线数据
     analysis_result: str | None    # 分析结论
+    error: str | None              # 错误信息（节点失败时写入）
 
 class ItemFlowState(TypedDict):
     """单品分析子图状态"""
@@ -140,6 +141,7 @@ class ItemFlowState(TypedDict):
     kline_data: list | None        # K线数据
     indicators: dict | None        # 技术指标计算结果
     analysis_result: str | None
+    error: str | None              # 错误信息（节点失败时写入）
 
 class ScoutFlowState(TypedDict):
     """机会发现子图状态"""
@@ -147,6 +149,7 @@ class ScoutFlowState(TypedDict):
     rank_data: list | None         # 排行榜数据
     anomalies: list | None         # 检测到的异常
     opportunities: list | None     # 筛选出的机会
+    error: str | None              # 错误信息（节点失败时写入）
 
 class AdvisorFlowState(TypedDict):
     """投资顾问子图状态"""
@@ -158,6 +161,7 @@ class AdvisorFlowState(TypedDict):
     recommendation: str | None     # 最终建议
     risk_level: str | None         # "low" | "medium" | "high"
     requires_confirmation: bool    # 是否需要 HITL 确认
+    error: str | None              # 错误信息（节点失败时写入）
 ```
 
 ---
@@ -240,6 +244,7 @@ infrastructure/csqaq_client/
 | `price_snapshots` | id, good_id, timestamp, buff_sell, buff_buy, steam_sell, yyyp_sell, sell_num, buy_num | 定时价格快照 |
 | `alerts` | id, alert_type, good_id, title, message, data_snapshot, triggered_at, acknowledged | 预警记录 |
 | `session_summaries` | id, session_id, summary_text, message_count, created_at | 对话摘要 |
+| `metrics` | id, metric_name, value, agent_role, correlation_id, timestamp | 系统运行指标（API调用、Token消耗等） |
 
 本地用 SQLite，服务器用 PostgreSQL，通过 `DATABASE_URL` 环境变量切换。
 
@@ -337,6 +342,10 @@ class Settings(BaseSettings):
     max_history_messages: int = 20                # 触发摘要压缩的阈值
     chromadb_path: str = "data/chroma"
 
+    # 成本控制
+    daily_token_budget: int = 500_000      # 日 Token 上限
+    monthly_token_budget: int = 10_000_000 # 月 Token 上限
+
     # 通知 (服务器模式)
     notify_webhook_url: str | None = None
 
@@ -368,6 +377,11 @@ typer = ">=0.12"
 pandas = ">=2.0"
 
 [project.optional-dependencies]
+dev = [
+    "pytest >= 8.0",
+    "pytest-asyncio >= 0.24",
+    "respx >= 0.21",
+]
 server = [
     "fastapi >= 0.115",
     "uvicorn >= 0.30",
@@ -573,6 +587,15 @@ class Settings(BaseSettings):
 ```
 
 应用启动时在 `main.py` 中 `try/except` 捕获 `ValidationError`，输出清晰的提示信息。
+
+### 启动序列
+
+1. 加载 `.env` → Pydantic Settings 校验（缺失必需字段则报错退出）
+2. 调用 `POST /api/v1/bindIp` 绑定当前 IP（非固定 IP 场景必需）
+3. 初始化数据库连接、缓存、LLM 工厂
+4. 启动 LangGraph 图编译
+5. 启动后台监控调度器（如果启用）
+6. 进入 CLI 交互循环
 
 ---
 
