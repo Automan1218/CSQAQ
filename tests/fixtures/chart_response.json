@@ -1,0 +1,10 @@
+{
+    "goodId": 7310,
+    "platform": "buff",
+    "period": "30d",
+    "points": [
+        {"timestamp": 1710633600, "price": 83.00, "volume": 520},
+        {"timestamp": 1710720000, "price": 84.50, "volume": 480},
+        {"timestamp": 1710806400, "price": 85.50, "volume": 510}
+    ]
+}

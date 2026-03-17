@@ -1,0 +1,14 @@
+[
+    {
+        "goodId": 7310,
+        "goodName": "AK-47 | 红线 (久经沙场)",
+        "marketHashName": "AK-47 | Redline (Field-Tested)",
+        "imageUrl": "https://img.csqaq.com/ak47_redline.png"
+    },
+    {
+        "goodId": 7311,
+        "goodName": "AK-47 | 红线 (略有磨损)",
+        "marketHashName": "AK-47 | Redline (Minimal Wear)",
+        "imageUrl": "https://img.csqaq.com/ak47_redline_mw.png"
+    }
+]
