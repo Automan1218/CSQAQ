@@ -361,7 +361,7 @@ pydantic = ">=2.0"
 pydantic-settings = ">=2.0"
 sqlalchemy = {version = ">=2.0", extras = ["asyncio"]}
 aiosqlite = ">=0.20"
-apscheduler = ">=3.10"
+apscheduler = ">=3.10,<4.0"
 chromadb = ">=0.5"
 rich = ">=13.0"
 typer = ">=0.12"
@@ -493,3 +493,270 @@ CSQAQ/
 | 安装 | `pip install -e .` | `pip install -e ".[server]"` |
 
 核心逻辑（flows/、components/、infrastructure/ 大部分）100% 共享，零代码改动。
+
+---
+
+## API 认证方式
+
+CSQAQ API 使用 **Header Token** 认证：
+
+```
+POST /api/v1/info/chart HTTP/1.1
+Host: api.csqaq.com
+ApiToken: <your_api_token>
+Content-Type: application/json
+```
+
+- **Header 名称**：`ApiToken`（注意大小写）
+- **获取方式**：在 csqaq.com 注册账号后，在个人中心获取
+- **IP 白名单**：首次使用需调用 `POST /api/v1/bindIp` 绑定当前 IP，非固定 IP 场景每次启动时自动调用
+- **Token 不过期**，无需刷新
+
+客户端实现中，所有请求统一在 `httpx.AsyncClient` 的 `headers` 参数中注入 `ApiToken`。
+
+---
+
+## 错误处理策略
+
+### API 客户端层
+
+| 错误类型 | 处理方式 |
+|---------|---------|
+| HTTP 422 (参数校验失败) | 抛出 `CSQAQValidationError`，不重试 |
+| HTTP 429 (限频) | 指数退避重试，最多 3 次 |
+| HTTP 5xx (服务端错误) | 指数退避重试，最多 3 次 |
+| 网络超时/连接错误 | 指数退避重试，最多 3 次 |
+| HTTP 401/403 (认证失败) | 抛出 `CSQAQAuthError`，不重试，提示用户检查 Token |
+
+### LangGraph 流程层
+
+**节点失败不中断整个图**：采用"尽力而为"策略。
+
+- 如果 Market Agent 调用 API 失败，将错误信息写入 `market_context`，Advisor 基于可用数据给出建议并标注数据缺失
+- 如果所有数据 Agent 都失败，Advisor 直接返回"数据获取失败，请稍后重试"
+- 每个子图的入口节点 catch 异常并写入 state 的 `error` 字段
+
+### 后台监控层
+
+- 单次监控失败：记录日志，下一个周期重试
+- 连续 3 次失败：降低轮询频率（退避），通知用户"监控异常"
+- API Token 失效：停止所有监控，CLI 输出错误提示
+
+---
+
+## 安全设计
+
+### 密钥管理
+
+- `.env` 文件存储敏感配置，**必须** 在 `.gitignore` 中排除
+- 提供 `.env.example` 作为模板（不含真实密钥）
+- 服务器部署时推荐通过环境变量注入，不使用 `.env` 文件
+- 启动时通过 Pydantic validators 校验必需字段，缺失则立即报错退出
+
+### .gitignore
+
+```
+.env
+data/
+*.db
+__pycache__/
+*.pyc
+.venv/
+```
+
+### 启动校验
+
+```python
+class Settings(BaseSettings):
+    csqaq_api_token: str    # 无默认值 → 缺失时 Pydantic 抛出 ValidationError
+    openai_api_key: str     # 无默认值 → 缺失时立即报错
+```
+
+应用启动时在 `main.py` 中 `try/except` 捕获 `ValidationError`，输出清晰的提示信息。
+
+---
+
+## 限频与请求调度
+
+CSQAQ API 限制 **1 次/秒/IP**。系统中存在并发请求源：用户交互查询 + 后台监控任务。
+
+### 优先级队列设计
+
+```
+┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
+│ 用户交互请求  │────▶│  Priority Queue  │────▶│  Rate Limiter │──▶ CSQAQ API
+│ (priority=0) │     │  (heapq)         │     │  (1 req/sec)  │
+├──────────────┤     │                  │     └──────────────┘
+│ 预警检测请求  │────▶│                  │
+│ (priority=1) │     │                  │
+├──────────────┤     │                  │
+│ 后台扫描请求  │────▶│                  │
+│ (priority=2) │     └─────────────────┘
+└──────────────┘
+```
+
+- **Priority 0**：用户交互请求 — 最高优先级，立即执行
+- **Priority 1**：预警检测（关注列表轮询）— 次优先
+- **Priority 2**：后台排行榜扫描 — 最低优先，可延迟
+
+用户交互时，后台请求自动让步，避免用户等待 20 秒。
+
+### 批量优化
+
+- 关注列表轮询：使用 `get_rank_list` 批量拉取（page_size=500），单次请求覆盖多个饰品，而非逐个查询
+- 排行榜扫描：分页请求间间隔 1 秒
+
+---
+
+## 子图间状态映射
+
+### Router → SubGraph 输入映射
+
+```python
+class QueryContext(TypedDict):
+    """Router Agent 的结构化输出"""
+    good_name: str | None      # 饰品名 (用于 Item/Scout)
+    good_id: int | None        # 饰品 ID (如果已知)
+    time_range: str | None     # "7d" | "30d" | "90d" | "180d" | "1y"
+    platform: str | None       # "buff" | "steam" | "yyyp" | None(全部)
+    analysis_type: str | None  # "price" | "trend" | "comparison" | None
+```
+
+### SubGraph → Advisor 输出映射
+
+```
+MainGraph 调用 SubGraph 时:
+  1. 从 MainGraphState 提取 query_context → 传入 SubGraph 的初始 state
+  2. SubGraph 执行完毕 → 返回 analysis_result
+  3. MainGraph 将 analysis_result 写入 AdvisorFlowState 的对应 context 字段
+
+具体映射:
+  MarketFlowState.analysis_result → AdvisorFlowState.market_context
+  ItemFlowState.analysis_result   → AdvisorFlowState.item_context
+  ScoutFlowState.opportunities    → AdvisorFlowState.scout_context
+```
+
+### "complex" 意图处理
+
+Router 输出结构化执行计划：
+
+```python
+class RoutingDecision(TypedDict):
+    intent: str                          # "market" | "item" | "scout" | "complex"
+    agents: list[str]                    # ["market", "item"] — complex 时指定需要的 agent
+    query_context: QueryContext
+```
+
+complex 时，MainGraph 按 `agents` 列表顺序依次调用子图，每个子图的输出累积到 AdvisorFlowState 中，最后统一调用 Advisor。
+
+---
+
+## 成本控制
+
+### 预估月度成本（中等使用强度）
+
+| 组件 | 场景 | 估算 |
+|------|------|------|
+| GPT-4o-mini (Router) | 每次交互 ~200 tokens，日 50 次 | ~$0.5/月 |
+| GPT-4o (数据 Agent) | 每次 ~2000 tokens，日 50 次 + 后台 ~300 次/天 | ~$15/月 |
+| GPT-4o (摘要压缩) | 每日 ~5 次 | ~$0.5/月 |
+| GPT-5 (Advisor) | 每次 ~3000 tokens，日 30 次 + 预警 ~10 次/天 | ~$30/月 |
+| **合计** | | **~$46/月** |
+
+### 成本控制机制
+
+1. **规则前置过滤**：后台监控先用纯数值规则（`checks.py`）判断是否异常，只有触发阈值后才调用 LLM Agent 分析，避免每 5 分钟都消耗 GPT-5
+2. **日/月 Token 预算**：`config.py` 中增加 `daily_token_budget` 和 `monthly_token_budget`，超出后暂停 LLM 调用，保留纯数据查询功能
+3. **缓存命中**：相同查询在缓存 TTL 内复用结果，不重复调用 API 和 LLM
+
+```python
+class Settings(BaseSettings):
+    # ... 现有配置 ...
+    daily_token_budget: int = 500_000     # 日 Token 上限
+    monthly_token_budget: int = 10_000_000 # 月 Token 上限
+```
+
+---
+
+## 可观测性
+
+### 日志
+
+- 使用 Python `logging` + `rich.logging.RichHandler` 美化终端输出
+- 结构化日志格式：`[时间] [级别] [模块] [correlation_id] 消息`
+- 每次用户交互和每次监控周期分配唯一 `correlation_id`，方便追踪完整调用链
+
+### LangGraph 追踪
+
+- 开发阶段集成 LangSmith（可选）：通过环境变量 `LANGCHAIN_TRACING_V2=true` 启用
+- 记录每个节点的输入/输出、耗时、Token 消耗
+
+### 关键指标
+
+- API 调用成功率/失败率
+- 平均响应延迟（CSQAQ API + LLM）
+- Token 消耗量（按 Agent 角色统计）
+- 缓存命中率
+- 预警触发频率
+
+指标数据写入 SQLite `metrics` 表，CLI 提供 `csqaq stats` 命令查看。
+
+---
+
+## 测试策略
+
+### 单元测试
+
+- **API Client**：使用 `respx` 库 mock httpx 请求，验证限流、重试、错误处理逻辑
+- **技术指标**：纯函数，用固定数据集验证计算正确性
+- **State 映射**：验证子图间数据传递的正确性
+
+### 集成测试
+
+- **LangGraph Flow**：使用 `langchain-openai` 的 `FakeChatModel` 替代真实 LLM，验证图流转逻辑
+- **数据库**：使用内存 SQLite (`sqlite:///:memory:`) 测试 ORM 操作
+
+### E2E 测试（手动）
+
+- 连接真实 CSQAQ API + OpenAI API，端到端验证核心场景
+- 场景：查询单品 → 获取建议 → 加入关注列表 → 触发预警
+
+### Mock 策略
+
+- CSQAQ API：录制真实响应存为 JSON fixtures (`tests/fixtures/`)
+- LLM：使用 FakeChatModel 返回预设响应，或用 GPT-4o-mini 降低测试成本
+
+---
+
+## CLI 命令设计
+
+```
+csqaq                          # 进入交互式对话模式
+csqaq chat "AK红线能入吗"       # 单次查询
+
+csqaq watch add "蝴蝶刀"        # 添加到关注列表
+csqaq watch add --id 7310      # 通过 good_id 添加
+csqaq watch list                # 查看关注列表
+csqaq watch remove 7310         # 移除
+csqaq watch set-threshold 7310 --pct 3.0  # 设置个别阈值
+
+csqaq monitor start             # 启动后台监控
+csqaq monitor stop              # 停止监控
+csqaq monitor status            # 查看监控状态
+
+csqaq alerts list               # 查看历史预警
+csqaq alerts clear              # 清除已读预警
+
+csqaq stats                     # 查看系统指标（API调用、Token消耗等）
+```
+
+---
+
+## 分阶段实施
+
+| 阶段 | 内容 | 目标 |
+|------|------|------|
+| **Phase 1** | 基础设施 + 单品分析 | CSQAQ Client、Item Agent、CLI 对话、能查询单品并获得建议 |
+| **Phase 2** | 大盘 + 排行榜 + 完整对话 | Market Agent、Scout Agent、Router、Advisor 串联完整流程 |
+| **Phase 3** | 后台监控 + 预警 | 关注列表、定时调度、预警检测、三层记忆 |
+| **Phase 4** | 服务器部署 | FastAPI、WebSocket、Redis、PostgreSQL、Webhook 通知 |
