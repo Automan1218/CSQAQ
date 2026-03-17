@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "csqaq"
+version = "0.1.0"
+description = "CS2 skin market multi-agent analysis system"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-community>=0.3",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "apscheduler>=3.10,<4.0",
+    "chromadb>=0.5",
+    "rich>=13.0",
+    "typer>=0.12",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+]
+server = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "websockets>=12.0",
+    "redis>=5.0",
+    "asyncpg>=0.29",
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7",
+    "cryptography>=43.0",
+]
+
+[project.scripts]
+csqaq = "csqaq.main:cli_entry"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/csqaq"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
