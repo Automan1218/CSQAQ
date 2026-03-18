@@ -120,7 +120,7 @@ class PageListItem(BaseModel):
 @dataclass
 class IntentResult:
     intent: str         # "item_query" | "market_query" | "scout_query"
-    confidence: float   # 关键词匹配=1.0, LLM=模型置信度
+    confidence: float   # 关键词匹配=1.0, LLM兜底固定=0.8
     item_name: str | None  # 仅 item_query 时提取
 ```
 
@@ -206,6 +206,7 @@ START → fetch_market_data → analyze_market → advisor_node → format_resul
 ```python
 class MarketFlowState(TypedDict):
     messages: Annotated[list, add_messages]
+    query: str                    # 用户原始查询（从 Router 传入）
     home_data: dict | None        # 首页指数数据
     sub_data: dict | None         # 指数详情
     market_context: str | None    # LLM 分析结果
@@ -224,6 +225,7 @@ START → fetch_rank_data → analyze_opportunities → advisor_node → format_
 ```python
 class ScoutFlowState(TypedDict):
     messages: Annotated[list, add_messages]
+    query: str                    # 用户原始查询（从 Router 传入）
     rank_data: dict | None        # 三维度排行原始数据
     scout_context: str | None     # 交叉筛选 + LLM 总结
     recommendation: str | None    # Advisor 建议
