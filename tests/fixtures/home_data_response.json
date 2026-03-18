@@ -1,0 +1,29 @@
+{
+  "sub_index_data": [
+    {
+      "id": 1, "name": "BUFF饰品指数", "name_key": "buff",
+      "img": "https://example.com/buff.png", "market_index": 1052.3,
+      "chg_num": 2.5, "chg_rate": 0.24, "open": 1050.0,
+      "close": 1052.3, "high": 1055.0, "low": 1048.0,
+      "updated_at": "2026-03-18 12:00:00"
+    }
+  ],
+  "chg_type_data": [{"name": "步枪", "price_diff_1": 0.5, "type": "步枪"}],
+  "chg_price_data": [{"xKey": "中件", "price_diff_1": 0.3}],
+  "rate_data": {
+    "count_positive_1": 500, "count_negative_1": 300, "count_zero_1": 200,
+    "count_positive_7": 450, "count_negative_7": 350, "count_zero_7": 200,
+    "count_positive_15": 400, "count_negative_15": 400, "count_zero_15": 200,
+    "count_positive_30": 420, "count_negative_30": 380, "count_zero_30": 200,
+    "count_positive_90": 500, "count_negative_90": 300, "count_zero_90": 200,
+    "count_positive_180": 480, "count_negative_180": 320, "count_zero_180": 200
+  },
+  "online_number": {
+    "current_number": 850000, "today_peak": 1200000, "month_peak": 1500000,
+    "month_player": 30000000, "same_month_player": 29000000,
+    "same_time_number": 800000, "rate": 6.25, "same_time_number_week": 780000,
+    "rate_week": 8.97, "created_at": "2026-03-18 12:00:00"
+  },
+  "greedy_status": {"level": "medium", "label": "中等"},
+  "online_chart": [], "greedy": [], "alteration": [], "view_count": [], "card_price": []
+}
