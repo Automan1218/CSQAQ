@@ -1,0 +1,14 @@
+[
+  {
+    "id": 150, "good_id": 14675, "name": "梦魇武器箱",
+    "img": "https://example.com/img.png", "group": "其他",
+    "statistic": 7908, "updated_at": "2026-03-18T15:00:18",
+    "avg_price": 5.643, "sum_price": 44624.8, "special": 0
+  },
+  {
+    "id": 326, "good_id": 9720, "name": "AK-47 | 二西莫夫 (久经沙场)",
+    "img": "https://example.com/ak.png", "group": "步枪",
+    "statistic": 215, "updated_at": "2026-03-18T14:52:52",
+    "avg_price": 197.204, "sum_price": 42398.8, "special": 2
+  }
+]
