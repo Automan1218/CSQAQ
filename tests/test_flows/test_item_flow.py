@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -10,7 +10,7 @@ async def test_item_flow_produces_analysis(mock_item_api):
     """Item flow should produce an analysis_result in the final state."""
     from langchain_core.messages import AIMessage
 
-    mock_factory = AsyncMock()
+    mock_factory = MagicMock()
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(content="AK-47红线近期表现稳定，价格在83-85元区间震荡。")
     mock_factory.create.return_value = mock_llm
@@ -38,7 +38,7 @@ async def test_item_flow_handles_search_failure(mock_item_api):
     """When search fails, error should be written to state."""
     mock_item_api.search_suggest.side_effect = Exception("API down")
 
-    mock_factory = AsyncMock()
+    mock_factory = MagicMock()
     mock_factory.create.return_value = AsyncMock()
 
     flow = build_item_flow(item_api=mock_item_api, model_factory=mock_factory)

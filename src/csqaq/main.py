@@ -2,9 +2,7 @@
 """Application entry point and dependency wiring."""
 from __future__ import annotations
 
-import asyncio
 import logging
-import sys
 
 from rich.logging import RichHandler
 
@@ -55,14 +53,20 @@ class App:
 
     @property
     def item_api(self):
+        if self._item_api is None:
+            raise RuntimeError("App not initialized — call await app.init() first")
         return self._item_api
 
     @property
     def model_factory(self):
+        if self._model_factory is None:
+            raise RuntimeError("App not initialized — call await app.init() first")
         return self._model_factory
 
     @property
     def database(self):
+        if self._database is None:
+            raise RuntimeError("App not initialized — call await app.init() first")
         return self._database
 
     async def close(self) -> None:

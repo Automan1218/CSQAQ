@@ -56,10 +56,10 @@ class TechnicalIndicators:
         Compares average of last `window` volumes to the `window` before that.
         Uses a 10% threshold for classification.
         """
-        if len(volumes) < window + 1:
+        if len(volumes) < window * 2:
             return "stable"
         recent = volumes[-window:]
-        previous = volumes[: -window] if len(volumes) > window else []
+        previous = volumes[-window * 2 : -window]
         if not previous:
             return "stable"
         avg_recent = sum(recent) / len(recent)

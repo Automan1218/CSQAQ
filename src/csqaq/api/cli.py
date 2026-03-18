@@ -26,7 +26,7 @@ def _load_settings() -> Settings:
 
 
 @app.command()
-def chat(query: str = typer.Argument(None, help="查询内容，如 'AK红线能入吗'")):
+def chat(query: str | None = typer.Argument(None, help="查询内容，如 'AK红线能入吗'")):
     """查询饰品分析和投资建议。不带参数进入交互模式。"""
     setup_logging()
     settings = _load_settings()

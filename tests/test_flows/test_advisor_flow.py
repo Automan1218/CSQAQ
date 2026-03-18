@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -8,7 +8,7 @@ from csqaq.flows.advisor_flow import AdvisorFlowState, build_advisor_flow
 
 @pytest.mark.asyncio
 async def test_advisor_produces_recommendation():
-    mock_factory = AsyncMock()
+    mock_factory = MagicMock()
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(
         content='{"recommendation": "建议持有观望，近期价格稳定", "risk_level": "low"}'
@@ -34,7 +34,7 @@ async def test_advisor_produces_recommendation():
 
 @pytest.mark.asyncio
 async def test_advisor_sets_confirmation_for_high_risk():
-    mock_factory = AsyncMock()
+    mock_factory = MagicMock()
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(
         content='{"recommendation": "建议立即清仓AK红线", "risk_level": "high"}'

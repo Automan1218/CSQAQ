@@ -4,7 +4,6 @@ Node functions for the Item Flow LangGraph subgraph.
 """
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -108,8 +107,7 @@ async def analyze_node(state: dict, *, model_factory: ModelFactory) -> dict:
         indent=2,
     )
 
-    llm_or_coro = model_factory.create("analyst")
-    llm = await llm_or_coro if inspect.isawaitable(llm_or_coro) else llm_or_coro
+    llm = model_factory.create("analyst")
     messages = [
         {"role": "system", "content": ITEM_ANALYST_SYSTEM_PROMPT},
         {"role": "user", "content": f"请分析以下饰品数据:\n\n{data_summary}"},

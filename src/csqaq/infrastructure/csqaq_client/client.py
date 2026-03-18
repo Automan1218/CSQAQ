@@ -139,3 +139,12 @@ class CSQAQClient:
 
     async def __aexit__(self, *args):
         await self.close()
+
+    def __del__(self) -> None:
+        if not self._http.is_closed:
+            try:
+                import asyncio
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._http.aclose())
+            except RuntimeError:
+                pass

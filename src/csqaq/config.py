@@ -1,9 +1,11 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     # Runtime mode
-    mode: str = "local"  # "local" | "server"
+    mode: Literal["local", "server"] = "local"
 
     # CSQAQ API
     csqaq_api_token: str = ""

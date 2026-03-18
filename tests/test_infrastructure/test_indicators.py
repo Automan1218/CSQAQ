@@ -46,13 +46,13 @@ class TestPlatformSpread:
 
 class TestVolumeTrend:
     def test_increasing_volume(self):
-        volumes = [100, 200, 300, 400, 500]
+        volumes = [100, 100, 100, 300, 400, 500]
         assert TechnicalIndicators.volume_trend(volumes, window=3) == "increasing"
 
     def test_decreasing_volume(self):
-        volumes = [500, 400, 300, 200, 100]
+        volumes = [500, 400, 300, 100, 100, 100]
         assert TechnicalIndicators.volume_trend(volumes, window=3) == "decreasing"
 
     def test_stable_volume(self):
-        volumes = [100, 101, 99, 100, 100]
+        volumes = [100, 101, 99, 100, 100, 101]
         assert TechnicalIndicators.volume_trend(volumes, window=3) == "stable"

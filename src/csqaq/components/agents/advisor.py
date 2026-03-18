@@ -4,7 +4,6 @@ Uses GPT-5 for deep reasoning. Outputs structured JSON with recommendation + ris
 """
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -58,9 +57,6 @@ async def advise_node(state: dict, *, model_factory: ModelFactory) -> dict:
 
     try:
         llm = model_factory.create("advisor")
-        # Handle both sync and async create (for test mocks)
-        if inspect.isawaitable(llm):
-            llm = await llm
 
         messages = [
             {"role": "system", "content": ADVISOR_SYSTEM_PROMPT},
