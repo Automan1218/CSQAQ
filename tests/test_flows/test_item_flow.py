@@ -10,10 +10,20 @@ async def test_item_flow_produces_analysis(mock_item_api):
     """Item flow should produce an analysis_result in the final state."""
     from langchain_core.messages import AIMessage
 
+    mock_analyst = AsyncMock()
+    mock_analyst.ainvoke.return_value = AIMessage(content="AK-47红线近期表现稳定，价格在83-85元区间震荡。")
+    mock_advisor = AsyncMock()
+    mock_advisor.ainvoke.return_value = AIMessage(
+        content='{"recommendation": "建议持有", "risk_level": "low"}'
+    )
+
+    def mock_create(role):
+        if role == "advisor":
+            return mock_advisor
+        return mock_analyst
+
     mock_factory = MagicMock()
-    mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = AIMessage(content="AK-47红线近期表现稳定，价格在83-85元区间震荡。")
-    mock_factory.create.return_value = mock_llm
+    mock_factory.create = mock_create
 
     flow = build_item_flow(item_api=mock_item_api, model_factory=mock_factory)
     initial_state: ItemFlowState = {
@@ -26,11 +36,19 @@ async def test_item_flow_produces_analysis(mock_item_api):
         "indicators": None,
         "analysis_result": None,
         "error": None,
+        "item_context": None,
+        "market_context": None,
+        "scout_context": None,
+        "historical_advice": None,
+        "recommendation": None,
+        "risk_level": None,
+        "requires_confirmation": False,
     }
     result = await flow.ainvoke(initial_state)
     assert result.get("error") is None
     assert result.get("analysis_result") is not None
     assert len(result["analysis_result"]) > 0
+    assert result.get("recommendation") is not None
 
 
 @pytest.mark.asyncio
@@ -52,6 +70,13 @@ async def test_item_flow_handles_search_failure(mock_item_api):
         "indicators": None,
         "analysis_result": None,
         "error": None,
+        "item_context": None,
+        "market_context": None,
+        "scout_context": None,
+        "historical_advice": None,
+        "recommendation": None,
+        "risk_level": None,
+        "requires_confirmation": False,
     }
     result = await flow.ainvoke(initial_state)
     assert result.get("error") is not None
