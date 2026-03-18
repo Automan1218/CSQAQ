@@ -41,69 +41,158 @@ API 层 (cli.py)
 
 ## 1. Infrastructure 层 — 新增
 
+### CSQAQClient 改动
+
+现有 client 只有 `post()` 方法。首页数据和指数详情是 **GET** 请求，需要新增 `get()` 方法：
+
+```python
+async def get(self, path: str, params: dict | None = None, priority: int = 0) -> dict:
+    """Send GET request with rate limiting and retry. Same retry logic as post()."""
+```
+
 ### MarketAPI (`infrastructure/csqaq_client/market.py`)
 
-| 方法 | API路径 | 说明 |
-|------|---------|------|
-| `get_home_data()` | POST (路径待确认) | 首页指数数据 |
-| `get_sub_data(sub_id)` | POST (路径待确认) | 指数详情 |
-
-> **注意**: API 路径需要通过实际调用确认。CSQAQ 文档使用客户端渲染无法爬取，实现时第一步先用真实 token 探测端点路径和响应格式。参考已有 ItemAPI 路径模式（`/info/good`、`/info/chart`）。
+| 方法 | HTTP 方法 | API路径 | 参数 | 说明 |
+|------|-----------|---------|------|------|
+| `get_home_data(type)` | GET | `/api/v1/current_data` | `type`: init\|hours\|kline\|lease (query param) | 首页指数数据 |
+| `get_sub_data(sub_id, type)` | GET | `/api/v1/sub_data` | `id`: 子指数id, `type`: daily\|hours (query params) | 指数详情 |
 
 ### RankAPI (`infrastructure/csqaq_client/rank.py`)
 
-| 方法 | API路径 | 说明 |
-|------|---------|------|
-| `get_rank_list(rank_type, period, page, size)` | POST (路径待确认) | 排行榜 |
-| `get_page_list(filters, page, size)` | POST (路径待确认) | 饰品列表筛选 |
-
-> rank_type 枚举值和 period 格式需实际调用确认后定义为常量。
+| 方法 | HTTP 方法 | API路径 | 参数 | 说明 |
+|------|-----------|---------|------|------|
+| `get_rank_list(filter, page, size)` | POST | `/api/v1/info/get_rank_list` | body: page_index, page_size, filter, search, show_recently_price | 排行榜 |
+| `get_page_list(filter, page, size, search)` | POST | `/api/v1/info/get_page_list` | body: page_index, page_size, filter, search | 饰品列表 |
 
 ### 新增 Schemas
 
-Schema 字段需通过实际 API 调用确认后定义。预期结构：
+> 注意：这些 API 返回的字段名是**下划线命名**（不是驼峰），无需 `Field(alias=...)`。
 
-**IndexData**:
+**HomeData** — 首页数据（`GET /api/v1/current_data?type=init` 的 data 字段）:
 ```python
-class IndexData(BaseModel):
-    index_value: float          # 当前指数值
-    index_change: float         # 涨跌幅 (%)
-    rise_count: int             # 上涨家数
-    fall_count: int             # 下跌家数
-    flat_count: int             # 持平家数
-    online_count: int | None    # 在线人数
-    # ... 实际字段以 API 响应为准，使用 Field(alias=...) 映射驼峰命名
-```
-
-**SubIndexDetail**:
-```python
-class SubIndexDetail(BaseModel):
-    sub_id: str
+class SubIndexItem(BaseModel):
+    """饰品指数条目"""
+    id: int                     # 指数id
     name: str                   # 指数名称
-    today_change: float         # 今日涨跌
-    chart_points: list[dict]    # 图表数据点
+    name_key: str               # 指数key
+    img: str                    # 指数图片url
+    market_index: float         # 当前饰品指数
+    chg_num: float              # 指数今日变动
+    chg_rate: float             # 指数今日变动率 (%)
+    open: float                 # 今日开盘值
+    close: float                # 今日收盘值
+    high: float                 # 今日最高值
+    low: float                  # 今日最低值
+    updated_at: str             # 更新时间
+
+class RateData(BaseModel):
+    """涨跌分布数量 — 各时间段上涨/下跌/持平的饰品数量"""
+    count_positive_1: int       # 近1日上涨数
+    count_negative_1: int       # 近1日下跌数
+    count_zero_1: int           # 近1日持平数
+    count_positive_7: int
+    count_negative_7: int
+    count_zero_7: int
+    count_positive_30: int
+    count_negative_30: int
+    count_zero_30: int
+    # ... 15/90/180 同理，全部为 int
+
+class OnlineNumber(BaseModel):
+    """在线人数数据"""
+    current_number: int         # 当前在线人数
+    today_peak: int             # 今日峰值
+    month_peak: int             # 本月峰值
+    rate: float                 # 今日人数涨跌幅
+
+class GreedyStatus(BaseModel):
+    """市场情绪"""
+    level: str                  # "low" | "medium" | "high"
+    label: str                  # 中文标签（低迷/中等/活跃）
+
+class HomeData(BaseModel):
+    """首页完整数据"""
+    sub_index_data: list[SubIndexItem]
+    chg_type_data: list[dict]   # 饰品类型涨跌分布（直接传给 LLM）
+    chg_price_data: list[dict]  # 价格区间涨跌分布（直接传给 LLM）
+    rate_data: RateData
+    online_number: OnlineNumber
+    greedy_status: GreedyStatus
 ```
 
-**RankItem**:
+**SubData** — 指数详情（`GET /api/v1/sub_data` 的 data 字段）:
+```python
+class SubIndexCount(BaseModel):
+    """指数概要"""
+    name: str                   # 指数名称
+    now: float                  # 当前指数值
+    amplitude: float            # 今日变动
+    rate: float                 # 今日变动率 (%)
+    max_value: float            # 今日最高
+    min_value: float            # 今日最低
+    consecutive_days: int       # 连涨/跌天数（正=涨，负=跌）
+
+class SubData(BaseModel):
+    """指数详情数据"""
+    timestamp: list[int]        # 时间戳列表
+    count: SubIndexCount        # 指数概要
+    main_data: list[list[float]]  # 图表数据 [指数值, 涨跌幅, 涨跌率]
+    hourly_list: list[float]    # 今日走势 (0-24点)
+```
+
+**RankItem** — 排行榜条目（`POST /api/v1/info/get_rank_list` 的 data.data[] 字段）:
 ```python
 class RankItem(BaseModel):
-    good_id: int
-    good_name: str
-    image_url: str
-    rank_value: float           # 排行指标值（涨跌幅/成交量/在售数量）
-    change_rate: float          # 变化率 (%)
+    """排行榜饰品条目"""
+    id: int                     # 饰品id
+    name: str                   # 饰品名称
+    img: str                    # 饰品图片
+    exterior_localized_name: str | None  # 磨损
+    rarity_localized_name: str  # 品质
+    # 多平台价格
+    buff_sell_price: float
+    buff_sell_num: int
+    buff_buy_price: float
+    buff_buy_num: int
+    steam_sell_price: float
+    steam_sell_num: int
+    yyyp_sell_price: float
+    yyyp_sell_num: int
+    # 涨跌幅
+    buff_price_chg: float       # 近24h变动率
+    sell_price_rate_1: float    # 近1日变动率
+    sell_price_rate_7: float    # 近7日变动率
+    sell_price_rate_30: float   # 近30日变动率
+    rank_num: int               # 饰品热度排名
 ```
 
-**PageListItem**:
+**PageListItem** — 饰品列表条目（`POST /api/v1/info/get_page_list` 的 data.data[] 字段）:
 ```python
 class PageListItem(BaseModel):
-    good_id: int
-    good_name: str
-    buff_sell_price: float
-    daily_change_rate: float
-    volume: int
-    sell_num: int
+    """饰品列表条目"""
+    id: int                     # 饰品good_id
+    name: str                   # 饰品名称
+    exterior_localized_name: str | None  # 磨损
+    rarity_localized_name: str  # 品质
+    img: str                    # 饰品图片
+    yyyp_sell_price: float      # 悠悠有品在售价
+    yyyp_sell_num: float        # 悠悠有品在售数量
 ```
+
+### 排行榜 filter 参数
+
+排行榜 API 的 filter 字段使用**中文键名**进行排序：
+
+```python
+# Scout Agent 需要的三种排序
+RANK_FILTERS = {
+    "涨跌幅": {"排序": ["价格_近1天价格变动率_降序(BUFF)"]},
+    "成交量": {"排序": ["价格_BUFF在售数量_降序"]},
+    "在售数量变化": {"排序": ["价格_BUFF在售数量_降序"]},
+}
+```
+
+> 注意: 排序键的具体可选值需参考 [排行榜接口Body参数](https://docs.csqaq.com/doc-4619235) 文档。上述为根据响应示例中 `msg: "sell_buy_diff_chg_buff"` 推断的格式，实现时需验证。
 
 ## 2. Components 层 — 新增
 
@@ -145,16 +234,18 @@ user: {query}
 
 ### Market Agent (`components/agents/market.py`)
 
-- 调用 MarketAPI 获取首页数据 + 指数详情
+- 调用 `MarketAPI.get_home_data(type="init")` 获取首页数据
+- 调用 `MarketAPI.get_sub_data(sub_id=1, type="daily")` 获取主指数详情
+- 组装数据（指数值、涨跌率、连涨/跌天数、涨跌分布、市场情绪）给 LLM
 - LLM (analyst) 分析大盘方向
 - 输出: `market_context`（方向判断 + 关键数据摘要）
 
 ### Scout Agent (`components/agents/scout.py`)
 
-- 调用 RankAPI 获取 3 维度排行（涨跌幅 top20、成交量 top20、在售数量变化 top20）
+- 调用 `RankAPI.get_rank_list()` 分别获取 3 维度排行（涨跌幅 top20、成交量 top20、在售数量变化 top20）
 - **交叉筛选算法**：
-  1. 取三个排行各 top 20 的 good_id
-  2. 统计每个 good_id 出现次数
+  1. 取三个排行各 top 20 的 id (good_id)
+  2. 统计每个 id 出现次数
   3. 出现 ≥2 次 = 高关注度（量价/量售配合）
   4. 按出现次数降序排列，取 top 10
   5. 如果交叉结果不足 5 个，补充涨跌幅 top 的剩余饰品
@@ -172,7 +263,7 @@ Phase 1 中 Item Flow 和 Advisor Flow 是两个独立的 compiled graph，在 `
 2. 避免 Router Flow 还需要根据 intent 决定如何组装 Advisor 参数
 3. 每个子 flow 的 Advisor 接收的 context 字段不同（item_context vs market_context vs scout_context）
 
-**Item Flow 需配合重构**：在末尾增加 advisor_node，使其也自包含输出 result。
+**Item Flow 需配合重构**：在末尾增加 advisor_node + format_result，使其也自包含输出 result。
 
 ### Router Flow (`flows/router_flow.py`) — 主入口图
 
@@ -235,7 +326,7 @@ class ScoutFlowState(TypedDict):
 
 ### Item Flow — 需小幅重构
 
-在现有 `resolve_item → fetch_chart → analyze` 之后增加 `advisor_node → format_result`，使其自包含输出 result。
+在现有 `resolve_item → fetch_chart → analyze` 之后增加 `advisor_node → format_result`，使其也自包含输出 result。
 
 ## 4. 入口改动
 
