@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from csqaq.config import Settings
-from csqaq.main import App, run_item_query, setup_logging
+from csqaq.main import App, run_query, setup_logging
 
 app = typer.Typer(name="csqaq", help="CS2 饰品投资分析系统")
 console = Console()
@@ -44,7 +44,7 @@ async def _single_query(settings: Settings, query: str) -> str:
     application = App(settings)
     await application.init()
     try:
-        return await run_item_query(application, query)
+        return await run_query(application, query)
     finally:
         await application.close()
 
@@ -61,7 +61,7 @@ async def _interactive_mode(settings: Settings) -> None:
             if not query.strip():
                 continue
             with console.status("分析中..."):
-                result = await run_item_query(application, query.strip())
+                result = await run_query(application, query.strip())
             console.print(Panel(result, title="分析结果", border_style="blue"))
             console.print()
     except (KeyboardInterrupt, EOFError):

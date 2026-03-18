@@ -24,6 +24,9 @@ class App:
         self.settings = settings
         self._csqaq_client = None
         self._item_api = None
+        self._market_api = None
+        self._rank_api = None
+        self._vol_api = None
         self._model_factory = None
         self._database = None
 
@@ -31,6 +34,9 @@ class App:
         from csqaq.components.models.factory import ModelFactory
         from csqaq.infrastructure.csqaq_client.client import CSQAQClient
         from csqaq.infrastructure.csqaq_client.item import ItemAPI
+        from csqaq.infrastructure.csqaq_client.market import MarketAPI
+        from csqaq.infrastructure.csqaq_client.rank import RankAPI
+        from csqaq.infrastructure.csqaq_client.vol import VolAPI
         from csqaq.infrastructure.database.connection import Database
 
         # CSQAQ Client
@@ -40,6 +46,9 @@ class App:
             rate_limit=self.settings.csqaq_rate_limit,
         )
         self._item_api = ItemAPI(self._csqaq_client)
+        self._market_api = MarketAPI(self._csqaq_client)
+        self._rank_api = RankAPI(self._csqaq_client)
+        self._vol_api = VolAPI(self._csqaq_client)
 
         # LLM Factory
         self._model_factory = ModelFactory()
@@ -56,6 +65,24 @@ class App:
         if self._item_api is None:
             raise RuntimeError("App not initialized — call await app.init() first")
         return self._item_api
+
+    @property
+    def market_api(self):
+        if self._market_api is None:
+            raise RuntimeError("App not initialized — call await app.init() first")
+        return self._market_api
+
+    @property
+    def rank_api(self):
+        if self._rank_api is None:
+            raise RuntimeError("App not initialized — call await app.init() first")
+        return self._rank_api
+
+    @property
+    def vol_api(self):
+        if self._vol_api is None:
+            raise RuntimeError("App not initialized — call await app.init() first")
+        return self._vol_api
 
     @property
     def model_factory(self):
@@ -76,57 +103,20 @@ class App:
             await self._database.close()
 
 
-async def run_item_query(app: App, query: str) -> str:
-    """Run a single item analysis query end-to-end."""
-    from csqaq.flows.advisor_flow import build_advisor_flow
-    from csqaq.flows.item_flow import build_item_flow
+async def run_query(app: App, query: str) -> str:
+    """Run any query through the router flow."""
+    from csqaq.flows.router_flow import build_router_flow
 
-    # Build flows
-    item_flow = build_item_flow(item_api=app.item_api, model_factory=app.model_factory)
-    advisor_flow = build_advisor_flow(model_factory=app.model_factory)
-
-    # Run item analysis
-    item_result = await item_flow.ainvoke({
-        "messages": [],
-        "good_id": None,
-        "good_name": query,
-        "item_detail": None,
-        "chart_data": None,
-        "kline_data": None,
-        "indicators": None,
-        "analysis_result": None,
-        "error": None,
+    router_flow = build_router_flow(
+        item_api=app.item_api, market_api=app.market_api,
+        rank_api=app.rank_api, vol_api=app.vol_api,
+        model_factory=app.model_factory,
+    )
+    result = await router_flow.ainvoke({
+        "messages": [], "query": query, "intent": None,
+        "item_name": None, "result": None, "error": None,
     })
-
-    if item_result.get("error") and not item_result.get("analysis_result"):
-        return f"查询失败: {item_result['error']}"
-
-    # Run advisor
-    advisor_result = await advisor_flow.ainvoke({
-        "messages": [],
-        "market_context": None,
-        "item_context": {
-            "analysis_result": item_result.get("analysis_result", ""),
-            "item_detail": item_result.get("item_detail"),
-            "indicators": item_result.get("indicators"),
-        },
-        "scout_context": None,
-        "historical_advice": None,
-        "recommendation": None,
-        "risk_level": None,
-        "requires_confirmation": False,
-        "error": None,
-    })
-
-    # Format output
-    parts = []
-    if item_result.get("analysis_result"):
-        parts.append(f"📊 分析:\n{item_result['analysis_result']}")
-    if advisor_result.get("recommendation"):
-        risk = advisor_result.get("risk_level", "unknown")
-        parts.append(f"\n💡 建议 (风险: {risk}):\n{advisor_result['recommendation']}")
-
-    return "\n".join(parts) if parts else "未能生成分析结果"
+    return result.get("result") or f"查询失败: {result.get('error', '未知错误')}"
 
 
 def cli_entry() -> None:
