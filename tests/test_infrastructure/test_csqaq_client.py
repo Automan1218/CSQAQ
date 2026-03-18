@@ -109,3 +109,14 @@ async def test_rate_limiter_enforces_interval():
     )
     # Just verify the rate limiter exists and has correct interval
     assert client._min_interval == pytest.approx(0.2, abs=0.01)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_request():
+    client = CSQAQClient(base_url="https://api.csqaq.com/api/v1", api_token="test", rate_limit=100.0)
+    respx.get("https://api.csqaq.com/api/v1/current_data").mock(
+        return_value=httpx.Response(200, json={"code": 200, "data": {"index": 1000}})
+    )
+    result = await client.get("/current_data", params={"type": "init"})
+    assert result == {"index": 1000}

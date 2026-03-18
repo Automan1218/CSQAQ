@@ -127,6 +127,63 @@ class CSQAQClient:
 
         raise last_error  # type: ignore[misc]
 
+    async def get(self, path: str, params: dict | None = None) -> dict:
+        """Send GET request with rate limiting and retry."""
+        url = f"{self._base_url}{path}"
+        last_error: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            await self._wait_for_rate_limit()
+            try:
+                response = await self._http.get(url, params=params)
+            except httpx.TransportError as e:
+                last_error = CSQAQClientError(f"Network error: {e}")
+                if attempt < self._max_retries:
+                    await self._backoff(attempt)
+                    continue
+                raise last_error from e
+
+            if response.status_code == 200:
+                body = response.json()
+                return body.get("data", body)
+
+            if response.status_code in (401, 403):
+                raise CSQAQAuthError(
+                    f"Authentication failed: {response.text}",
+                    status_code=response.status_code,
+                )
+            if response.status_code == 422:
+                raise CSQAQValidationError(
+                    f"Validation error: {response.text}",
+                    status_code=422,
+                )
+
+            if response.status_code in _RETRY_CODES:
+                last_error = (
+                    CSQAQRateLimitError("Rate limited", status_code=429)
+                    if response.status_code == 429
+                    else CSQAQServerError(
+                        f"Server error {response.status_code}: {response.text}",
+                        status_code=response.status_code,
+                    )
+                )
+                if attempt < self._max_retries:
+                    logger.warning(
+                        "CSQAQ API %s returned %d, retry %d/%d",
+                        path, response.status_code, attempt + 1, self._max_retries,
+                    )
+                    await self._backoff(attempt)
+                    continue
+
+            if last_error is None:
+                last_error = CSQAQClientError(
+                    f"Unexpected status {response.status_code}: {response.text}",
+                    status_code=response.status_code,
+                )
+            break
+
+        raise last_error  # type: ignore[misc]
+
     async def _backoff(self, attempt: int) -> None:
         delay = min(2**attempt * 0.5, 10.0)
         await asyncio.sleep(delay)
