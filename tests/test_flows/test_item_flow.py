@@ -1,33 +1,8 @@
-import json
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 
 from csqaq.flows.item_flow import build_item_flow, ItemFlowState
-from csqaq.infrastructure.csqaq_client.schemas import (
-    ChartData,
-    ItemDetail,
-    SuggestItem,
-)
-
-FIXTURES = Path(__file__).parent.parent / "fixtures"
-
-
-@pytest.fixture
-def mock_item_api():
-    api = AsyncMock()
-    suggest_data = json.loads((FIXTURES / "suggest_response.json").read_text(encoding="utf-8"))
-    api.search_suggest.return_value = [SuggestItem.model_validate(s) for s in suggest_data]
-
-    detail_data = json.loads((FIXTURES / "item_detail_response.json").read_text(encoding="utf-8"))
-    api.get_item_detail.return_value = ItemDetail.model_validate(detail_data)
-
-    chart_data = json.loads((FIXTURES / "chart_response.json").read_text(encoding="utf-8"))
-    api.get_item_chart.return_value = ChartData.model_validate(chart_data)
-
-    api.get_item_kline.return_value = []
-    return api
 
 
 @pytest.mark.asyncio
