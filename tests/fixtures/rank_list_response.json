@@ -1,0 +1,27 @@
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 7310, "name": "AK-47 | 红线 (久经沙场)",
+      "img": "https://example.com/ak.png",
+      "exterior_localized_name": "久经沙场", "rarity_localized_name": "保密",
+      "buff_sell_price": 85.5, "buff_sell_num": 1200,
+      "buff_buy_price": 82.0, "buff_buy_num": 500,
+      "steam_sell_price": 12.35, "steam_sell_num": 3000,
+      "steam_buy_price": 11.0, "steam_buy_num": 800,
+      "yyyp_sell_price": 83.0, "yyyp_sell_num": 600,
+      "yyyp_buy_price": 80.0, "yyyp_buy_num": 200,
+      "yyyp_lease_price": 0.5, "yyyp_long_lease_price": 0.3,
+      "buff_price_chg": 1.25,
+      "sell_price_1": 1.0, "sell_price_7": -2.0,
+      "sell_price_15": 0, "sell_price_30": 3.0,
+      "sell_price_90": 5.0, "sell_price_180": -1.0, "sell_price_365": 10.0,
+      "sell_price_rate_1": 1.18, "sell_price_rate_7": -2.29,
+      "sell_price_rate_15": 0, "sell_price_rate_30": 3.64,
+      "sell_price_rate_90": 6.21, "sell_price_rate_180": -1.16,
+      "sell_price_rate_365": 13.3,
+      "created_at": "2026-03-18T14:20:19", "rank_num": 42
+    }
+  ],
+  "recently_data": {}
+}
