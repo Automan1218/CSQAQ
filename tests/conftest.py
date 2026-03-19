@@ -4,12 +4,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from csqaq.infrastructure.csqaq_client.market_schemas import HomeData, SubData
+from csqaq.infrastructure.csqaq_client.rank_schemas import RankItem
 from csqaq.infrastructure.csqaq_client.schemas import (
     ChartData,
     ItemDetail,
     KlineBar,
     SuggestItem,
 )
+from csqaq.infrastructure.csqaq_client.vol_schemas import VolItem
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -36,4 +39,30 @@ def mock_item_api():
     kline_data = json.loads((FIXTURES / "kline_response.json").read_text(encoding="utf-8"))
     api.get_item_kline.return_value = [KlineBar.model_validate(k) for k in kline_data]
 
+    return api
+
+
+@pytest.fixture
+def mock_market_api():
+    api = AsyncMock()
+    home = json.loads((FIXTURES / "home_data_response.json").read_text(encoding="utf-8"))
+    sub = json.loads((FIXTURES / "sub_data_response.json").read_text(encoding="utf-8"))
+    api.get_home_data.return_value = HomeData.model_validate(home)
+    api.get_sub_data.return_value = SubData.model_validate(sub)
+    return api
+
+
+@pytest.fixture
+def mock_rank_api():
+    api = AsyncMock()
+    rank = json.loads((FIXTURES / "rank_list_response.json").read_text(encoding="utf-8"))
+    api.get_rank_list.return_value = [RankItem.model_validate(i) for i in rank["data"]]
+    return api
+
+
+@pytest.fixture
+def mock_vol_api():
+    api = AsyncMock()
+    vol = json.loads((FIXTURES / "vol_data_response.json").read_text(encoding="utf-8"))
+    api.get_vol_data.return_value = [VolItem.model_validate(i) for i in vol]
     return api

@@ -5,25 +5,20 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from csqaq.components.models.factory import ModelFactory
-from csqaq.flows.advisor_flow import build_advisor_flow
 from csqaq.flows.item_flow import build_item_flow
 
 
 @pytest.mark.asyncio
 async def test_full_item_to_advisor_pipeline(mock_item_api):
-    """Complete pipeline: search item -> analyze -> advise."""
-    # Set up model factory with mock LLMs
+    """Complete pipeline: search item -> analyze -> advise (advisor now embedded in item flow)."""
     factory = ModelFactory()
 
-    # Mock analyst LLM
     mock_analyst = AsyncMock()
     mock_analyst.ainvoke.return_value = AIMessage(
         content="AK-47红线当前Buff售价85.5元，买价82元，价差4.3%。Steam售价12.35美元。"
         "日涨幅1.25%，周跌2.3%，月涨5.6%。近30日价格在83-85.5元区间震荡，波动较小。"
         "成交量稳定，流动性良好。技术面偏中性。"
     )
-
-    # Mock advisor LLM
     mock_advisor = AsyncMock()
     mock_advisor.ainvoke.return_value = AIMessage(
         content='{"recommendation": "AK-47红线近期价格稳定，月度仍有5.6%涨幅。'
@@ -32,24 +27,16 @@ async def test_full_item_to_advisor_pipeline(mock_item_api):
 
     factory.register("analyst", provider="openai", model="gpt-4o")
     factory.register("advisor", provider="openai", model="gpt-5")
-    # Override create to return our mocks
-    original_create = factory.create
 
     def mock_create(role):
-        if role == "analyst":
-            return mock_analyst
-        elif role == "advisor":
+        if role == "advisor":
             return mock_advisor
-        return original_create(role)
+        return mock_analyst
 
     factory.create = mock_create
 
-    # Build flows
     item_flow = build_item_flow(item_api=mock_item_api, model_factory=factory)
-    advisor_flow = build_advisor_flow(model_factory=factory)
-
-    # Run item flow
-    item_result = await item_flow.ainvoke({
+    result = await item_flow.ainvoke({
         "messages": [],
         "good_id": None,
         "good_name": "AK红线",
@@ -58,23 +45,8 @@ async def test_full_item_to_advisor_pipeline(mock_item_api):
         "kline_data": None,
         "indicators": None,
         "analysis_result": None,
-        "error": None,
-    })
-
-    assert item_result.get("error") is None
-    assert item_result["good_id"] == 7310
-    assert item_result["analysis_result"] is not None
-    assert "AK-47" in item_result["analysis_result"]
-
-    # Run advisor flow with item context
-    advisor_result = await advisor_flow.ainvoke({
-        "messages": [],
+        "item_context": None,
         "market_context": None,
-        "item_context": {
-            "analysis_result": item_result["analysis_result"],
-            "item_detail": item_result.get("item_detail"),
-            "indicators": item_result.get("indicators"),
-        },
         "scout_context": None,
         "historical_advice": None,
         "recommendation": None,
@@ -83,7 +55,41 @@ async def test_full_item_to_advisor_pipeline(mock_item_api):
         "error": None,
     })
 
-    assert advisor_result["recommendation"] is not None
-    assert advisor_result["risk_level"] == "low"
-    assert advisor_result["requires_confirmation"] is False
-    assert "AK-47" in advisor_result["recommendation"]
+    assert result.get("error") is None
+    assert result["good_id"] == 7310
+    assert result["analysis_result"] is not None
+    assert "AK-47" in result["analysis_result"]
+    assert result["recommendation"] is not None
+    assert result["risk_level"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_full_market_pipeline(mock_market_api):
+    factory = ModelFactory()
+    mock_analyst = AsyncMock()
+    mock_analyst.ainvoke.return_value = AIMessage(content="大盘偏强，连涨3天")
+    mock_advisor = AsyncMock()
+    mock_advisor.ainvoke.return_value = AIMessage(
+        content='{"recommendation": "大盘偏强，可适度加仓", "risk_level": "low"}'
+    )
+
+    def mock_create(role):
+        if role == "advisor":
+            return mock_advisor
+        return mock_analyst
+
+    factory.register("analyst", provider="openai", model="gpt-4o")
+    factory.register("advisor", provider="openai", model="gpt-5")
+    factory.create = mock_create
+
+    from csqaq.flows.market_flow import build_market_flow
+    flow = build_market_flow(market_api=mock_market_api, model_factory=factory)
+    result = await flow.ainvoke({
+        "messages": [], "query": "大盘怎么样",
+        "home_data": None, "sub_data": None, "market_context": None,
+        "item_context": None, "scout_context": None, "historical_advice": None,
+        "recommendation": None, "risk_level": None,
+        "requires_confirmation": False, "error": None,
+    })
+    assert result["recommendation"] is not None
+    assert result["risk_level"] == "low"
