@@ -92,3 +92,27 @@ class SubData(BaseModel):
     count: SubIndexCount
     main_data: list[list[float]]
     hourly_list: list[float]
+
+
+class IndexKlineBar(BaseModel):
+    """Single K-line bar from GET /api/v1/sub/kline"""
+    t: str
+    o: float
+    c: float
+    h: float
+    l: float
+    v: int
+
+    @property
+    def timestamp_int(self) -> int:
+        return int(self.t)
+
+    @property
+    def close(self) -> float:
+        """Alias for .c, compatible with analyze_index_kline."""
+        return self.c
+
+    @property
+    def volume(self) -> int:
+        """Alias for .v, compatible with analyze_kline-style consumers."""
+        return self.v

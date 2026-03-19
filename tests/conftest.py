@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from csqaq.infrastructure.csqaq_client.market_schemas import HomeData, SubData
+from csqaq.infrastructure.csqaq_client.market_schemas import HomeData, IndexKlineBar, SubData
 from csqaq.infrastructure.csqaq_client.rank_schemas import RankItem
 from csqaq.infrastructure.csqaq_client.schemas import (
     ChartData,
@@ -49,6 +49,8 @@ def mock_market_api():
     sub = json.loads((FIXTURES / "sub_data_response.json").read_text(encoding="utf-8"))
     api.get_home_data.return_value = HomeData.model_validate(home)
     api.get_sub_data.return_value = SubData.model_validate(sub)
+    index_kline = json.loads((FIXTURES / "index_kline_response.json").read_text(encoding="utf-8"))
+    api.get_index_kline.return_value = [IndexKlineBar.model_validate(k) for k in index_kline]
     return api
 
 
