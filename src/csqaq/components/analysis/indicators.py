@@ -1,4 +1,17 @@
 import statistics
+from typing import NamedTuple
+
+
+class MACDResult(NamedTuple):
+    macd_line: float
+    signal_line: float
+    histogram: float
+
+
+class BollingerResult(NamedTuple):
+    upper: float
+    middle: float
+    lower: float
 
 
 class TechnicalIndicators:
@@ -92,3 +105,67 @@ class TechnicalIndicators:
         elif change_pct < -10:
             return "decreasing"
         return "stable"
+
+    @staticmethod
+    def rsi(prices: list[float], period: int = 14) -> float:
+        """Relative Strength Index using Wilder's method.
+
+        Returns 50.0 (neutral) if insufficient data (fewer than period+1 prices).
+        """
+        if len(prices) < period + 1:
+            return 50.0
+        changes = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
+        gains = [c if c > 0 else 0.0 for c in changes]
+        losses = [-c if c < 0 else 0.0 for c in changes]
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
+        for i in range(period, len(changes)):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss == 0:
+            return 100.0
+        rs = avg_gain / avg_loss
+        return 100.0 - 100.0 / (1 + rs)
+
+    @staticmethod
+    def macd(
+        prices: list[float], fast: int = 12, slow: int = 26, signal: int = 9
+    ) -> MACDResult:
+        """MACD indicator using EMA internally.
+
+        Returns MACDResult(0, 0, 0) if insufficient data.
+        """
+        if len(prices) < slow:
+            return MACDResult(0.0, 0.0, 0.0)
+        fast_ema = TechnicalIndicators.exponential_moving_average(prices, fast)
+        slow_ema = TechnicalIndicators.exponential_moving_average(prices, slow)
+        macd_values: list[float] = []
+        for f, s in zip(fast_ema, slow_ema):
+            if f is not None and s is not None:
+                macd_values.append(f - s)
+        if len(macd_values) < signal:
+            return MACDResult(0.0, 0.0, 0.0)
+        signal_ema = TechnicalIndicators.exponential_moving_average(macd_values, signal)
+        last_macd = macd_values[-1]
+        last_signal = signal_ema[-1]
+        if last_signal is None:
+            return MACDResult(0.0, 0.0, 0.0)
+        histogram = last_macd - last_signal
+        return MACDResult(last_macd, last_signal, histogram)
+
+    @staticmethod
+    def bollinger_bands(
+        prices: list[float], window: int = 20, num_std: int = 2
+    ) -> BollingerResult:
+        """Bollinger Bands: middle = SMA, upper/lower = middle ± num_std * stdev.
+
+        Returns BollingerResult(0, 0, 0) if insufficient data.
+        """
+        if len(prices) < window:
+            return BollingerResult(0.0, 0.0, 0.0)
+        window_slice = prices[-window:]
+        middle = sum(window_slice) / window
+        std = statistics.pstdev(window_slice)
+        upper = middle + num_std * std
+        lower = middle - num_std * std
+        return BollingerResult(upper, middle, lower)
