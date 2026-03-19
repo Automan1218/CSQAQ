@@ -43,7 +43,7 @@ async def test_scout_flow_produces_result():
     mock_analyst.ainvoke.return_value = AIMessage(content="item_1量价配合良好")
     mock_advisor = AsyncMock()
     mock_advisor.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "推荐关注item_1", "risk_level": "medium"}'
+        content='{"summary": "推荐关注item_1", "action_detail": "item_1量价配合良好，可小额建仓试探。", "risk_level": "medium"}'
     )
 
     def mock_create(role):
@@ -64,10 +64,11 @@ async def test_scout_flow_produces_result():
         "item_context": None,
         "market_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
         "error": None,
     })
     assert result.get("scout_context") is not None
-    assert result.get("recommendation") is not None
+    assert result.get("summary") is not None

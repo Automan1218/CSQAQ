@@ -22,7 +22,7 @@ async def test_router_dispatches_market_query():
     mock_factory = MagicMock()
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "大盘稳定", "risk_level": "low"}'
+        content='{"summary": "大盘稳定", "action_detail": "维持现有仓位，短期无需操作。", "risk_level": "low"}'
     )
     mock_factory.create.return_value = mock_llm
 

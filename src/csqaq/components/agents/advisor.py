@@ -1,6 +1,6 @@
 """Advisor Agent — synthesizes analysis data into investment recommendations.
 
-Uses GPT-5 for deep reasoning. Outputs structured JSON with recommendation + risk_level.
+Uses GPT-5 for deep reasoning. Outputs structured JSON with summary + action_detail + risk_level.
 """
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ ADVISOR_SYSTEM_PROMPT = """你是一位经验丰富的 CS2 饰品投资顾问。
 
 请综合分析后，输出严格 JSON 格式：
 {
-  "recommendation": "详细的投资建议（中文，100-300字）",
+  "summary": "一句话总结当前市场判断（中文，20-50字）",
+  "action_detail": "详细的操作建议（中文，80-250字）",
   "risk_level": "low" | "medium" | "high"
 }
 
@@ -36,7 +37,7 @@ ADVISOR_SYSTEM_PROMPT = """你是一位经验丰富的 CS2 饰品投资顾问。
 
 
 async def advise_node(state: dict, *, model_factory: ModelFactory) -> dict:
-    """Node: LLM produces investment recommendation."""
+    """Node: LLM produces investment summary and action detail."""
     context_parts = []
 
     if state.get("item_context"):
@@ -48,7 +49,8 @@ async def advise_node(state: dict, *, model_factory: ModelFactory) -> dict:
 
     if not context_parts:
         return {
-            "recommendation": "数据不足，无法给出建议。请先查询具体饰品或大盘数据。",
+            "summary": "数据不足，无法给出建议。请先查询具体饰品或大盘数据。",
+            "action_detail": "",
             "risk_level": "low",
             "requires_confirmation": False,
         }
@@ -67,24 +69,28 @@ async def advise_node(state: dict, *, model_factory: ModelFactory) -> dict:
         # Parse structured output
         try:
             parsed = json.loads(response.content)
-            recommendation = parsed.get("recommendation", response.content)
+            summary = parsed.get("summary", response.content)
+            action_detail = parsed.get("action_detail", "")
             risk_level = parsed.get("risk_level", "low")
         except json.JSONDecodeError:
-            recommendation = response.content
+            summary = response.content
+            action_detail = ""
             risk_level = "low"
 
         if risk_level not in ("low", "medium", "high"):
             risk_level = "medium"
 
         return {
-            "recommendation": recommendation,
+            "summary": summary,
+            "action_detail": action_detail,
             "risk_level": risk_level,
             "requires_confirmation": risk_level == "high",
         }
     except Exception as e:
         logger.error("advise_node failed: %s", e)
         return {
-            "recommendation": f"分析出错: {e}",
+            "summary": f"分析出错: {e}",
+            "action_detail": "",
             "risk_level": "low",
             "requires_confirmation": False,
             "error": str(e),

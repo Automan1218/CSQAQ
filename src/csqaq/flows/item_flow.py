@@ -29,7 +29,8 @@ class ItemFlowState(TypedDict):
     market_context: dict | None
     scout_context: dict | None
     historical_advice: list | None
-    recommendation: str | None
+    summary: str | None
+    action_detail: str | None
     risk_level: str | None
     requires_confirmation: bool
 

@@ -7,11 +7,11 @@ from csqaq.flows.advisor_flow import AdvisorFlowState, build_advisor_flow
 
 
 @pytest.mark.asyncio
-async def test_advisor_produces_recommendation():
+async def test_advisor_produces_summary():
     mock_factory = MagicMock()
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "建议持有观望，近期价格稳定", "risk_level": "low"}'
+        content='{"summary": "建议持有观望，近期价格稳定", "action_detail": "维持现有仓位，等待更明确信号。", "risk_level": "low"}'
     )
     mock_factory.create.return_value = mock_llm
 
@@ -22,13 +22,14 @@ async def test_advisor_produces_recommendation():
         "item_context": {"analysis_result": "AK-47红线近期价格稳定在83-85元区间"},
         "scout_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
         "error": None,
     }
     result = await flow.ainvoke(initial_state)
-    assert result.get("recommendation") is not None
+    assert result.get("summary") is not None
     assert result.get("risk_level") in ("low", "medium", "high")
 
 
@@ -37,7 +38,7 @@ async def test_advisor_sets_confirmation_for_high_risk():
     mock_factory = MagicMock()
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "建议立即清仓AK红线", "risk_level": "high"}'
+        content='{"summary": "建议立即清仓AK红线", "action_detail": "市场信号明显恶化，建议清仓止损。", "risk_level": "high"}'
     )
     mock_factory.create.return_value = mock_llm
 
@@ -48,7 +49,8 @@ async def test_advisor_sets_confirmation_for_high_risk():
         "item_context": {"analysis_result": "AK-47红线暴跌15%"},
         "scout_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
         "error": None,

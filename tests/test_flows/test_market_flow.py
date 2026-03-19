@@ -21,7 +21,7 @@ async def test_market_flow_produces_result():
     mock_analyst.ainvoke.return_value = AIMessage(content="大盘偏强，连涨3天")
     mock_advisor = AsyncMock()
     mock_advisor.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "大盘偏强，可适度加仓", "risk_level": "low"}'
+        content='{"summary": "大盘偏强，可适度加仓", "action_detail": "建议适度增加仓位，控制单次买入金额。", "risk_level": "low"}'
     )
 
     def mock_create(role):
@@ -41,10 +41,11 @@ async def test_market_flow_produces_result():
         "item_context": None,
         "scout_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
         "error": None,
     })
-    assert result.get("recommendation") is not None
+    assert result.get("summary") is not None
     assert result.get("market_context") is not None

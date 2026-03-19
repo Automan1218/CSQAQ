@@ -14,7 +14,7 @@ async def test_item_flow_produces_analysis(mock_item_api):
     mock_analyst.ainvoke.return_value = AIMessage(content="AK-47红线近期表现稳定，价格在83-85元区间震荡。")
     mock_advisor = AsyncMock()
     mock_advisor.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "建议持有", "risk_level": "low"}'
+        content='{"summary": "建议持有", "action_detail": "维持现有仓位，观察后续走势。", "risk_level": "low"}'
     )
 
     def mock_create(role):
@@ -40,7 +40,8 @@ async def test_item_flow_produces_analysis(mock_item_api):
         "market_context": None,
         "scout_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
     }
@@ -48,7 +49,7 @@ async def test_item_flow_produces_analysis(mock_item_api):
     assert result.get("error") is None
     assert result.get("analysis_result") is not None
     assert len(result["analysis_result"]) > 0
-    assert result.get("recommendation") is not None
+    assert result.get("summary") is not None
 
 
 @pytest.mark.asyncio
@@ -74,7 +75,8 @@ async def test_item_flow_handles_search_failure(mock_item_api):
         "market_context": None,
         "scout_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
     }

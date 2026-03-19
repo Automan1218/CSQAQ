@@ -58,14 +58,16 @@ async def _item_subflow_node(
         "item_detail": None, "chart_data": None, "kline_data": None,
         "indicators": None, "analysis_result": None,
         "item_context": None, "market_context": None, "scout_context": None,
-        "historical_advice": None, "recommendation": None,
+        "historical_advice": None, "summary": None, "action_detail": None,
         "risk_level": None, "requires_confirmation": False, "error": None,
     })
     parts = []
     if r.get("analysis_result"):
         parts.append(f"分析:\n{r['analysis_result']}")
-    if r.get("recommendation"):
-        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['recommendation']}")
+    if r.get("summary"):
+        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
+        if r.get("action_detail"):
+            parts.append(r["action_detail"])
     return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
 
 
@@ -80,14 +82,16 @@ async def _market_subflow_node(
         "messages": [], "query": state["query"],
         "home_data": None, "sub_data": None, "market_context": None,
         "item_context": None, "scout_context": None, "historical_advice": None,
-        "recommendation": None, "risk_level": None,
+        "summary": None, "action_detail": None, "risk_level": None,
         "requires_confirmation": False, "error": None,
     })
     parts = []
     if r.get("market_context"):
         parts.append(f"大盘分析:\n{r['market_context']}")
-    if r.get("recommendation"):
-        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['recommendation']}")
+    if r.get("summary"):
+        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
+        if r.get("action_detail"):
+            parts.append(r["action_detail"])
     return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
 
 
@@ -103,14 +107,16 @@ async def _scout_subflow_node(
         "messages": [], "query": state["query"],
         "rank_data": None, "scout_context": None,
         "item_context": None, "market_context": None, "historical_advice": None,
-        "recommendation": None, "risk_level": None,
+        "summary": None, "action_detail": None, "risk_level": None,
         "requires_confirmation": False, "error": None,
     })
     parts = []
     if r.get("scout_context"):
         parts.append(f"机会发现:\n{r['scout_context']}")
-    if r.get("recommendation"):
-        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['recommendation']}")
+    if r.get("summary"):
+        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
+        if r.get("action_detail"):
+            parts.append(r["action_detail"])
     return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
 
 

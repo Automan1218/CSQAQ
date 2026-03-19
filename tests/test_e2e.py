@@ -21,8 +21,8 @@ async def test_full_item_to_advisor_pipeline(mock_item_api):
     )
     mock_advisor = AsyncMock()
     mock_advisor.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "AK-47红线近期价格稳定，月度仍有5.6%涨幅。'
-        '建议持有观望，不建议追高。如回调至82元以下可小额加仓。", "risk_level": "low"}'
+        content='{"summary": "AK-47红线近期价格稳定，月度仍有5.6%涨幅。建议持有观望。",'
+        ' "action_detail": "不建议追高。如回调至82元以下可小额加仓。", "risk_level": "low"}'
     )
 
     factory.register("analyst", provider="openai", model="gpt-4o")
@@ -49,7 +49,8 @@ async def test_full_item_to_advisor_pipeline(mock_item_api):
         "market_context": None,
         "scout_context": None,
         "historical_advice": None,
-        "recommendation": None,
+        "summary": None,
+        "action_detail": None,
         "risk_level": None,
         "requires_confirmation": False,
         "error": None,
@@ -59,7 +60,7 @@ async def test_full_item_to_advisor_pipeline(mock_item_api):
     assert result["good_id"] == 7310
     assert result["analysis_result"] is not None
     assert "AK-47" in result["analysis_result"]
-    assert result["recommendation"] is not None
+    assert result["summary"] is not None
     assert result["risk_level"] == "low"
 
 
@@ -70,7 +71,7 @@ async def test_full_market_pipeline(mock_market_api):
     mock_analyst.ainvoke.return_value = AIMessage(content="大盘偏强，连涨3天")
     mock_advisor = AsyncMock()
     mock_advisor.ainvoke.return_value = AIMessage(
-        content='{"recommendation": "大盘偏强，可适度加仓", "risk_level": "low"}'
+        content='{"summary": "大盘偏强，可适度加仓", "action_detail": "建议适度增加仓位，控制单次买入金额。", "risk_level": "low"}'
     )
 
     def mock_create(role):
@@ -88,8 +89,8 @@ async def test_full_market_pipeline(mock_market_api):
         "messages": [], "query": "大盘怎么样",
         "home_data": None, "sub_data": None, "market_context": None,
         "item_context": None, "scout_context": None, "historical_advice": None,
-        "recommendation": None, "risk_level": None,
+        "summary": None, "action_detail": None, "risk_level": None,
         "requires_confirmation": False, "error": None,
     })
-    assert result["recommendation"] is not None
+    assert result["summary"] is not None
     assert result["risk_level"] == "low"
