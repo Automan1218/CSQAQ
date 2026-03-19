@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from csqaq.infrastructure.csqaq_client.rank import RankAPI
     from csqaq.infrastructure.csqaq_client.vol import VolAPI
 
+from csqaq.infrastructure.csqaq_client.rank_filters import RANK_FILTERS
+
 logger = logging.getLogger(__name__)
 
 PRICE_CHANGE_FILTER = {"排序": ["价格_近1天价格变动率_降序(BUFF)"]}
@@ -59,14 +61,27 @@ def cross_filter_ranks(
 
 
 async def fetch_rank_data_node(state: dict, *, rank_api: RankAPI, vol_api: VolAPI) -> dict:
-    """Node: fetch price-change ranking + trading volume data."""
+    """Node: fetch 6 ranking dimensions + trading volume data concurrently."""
     try:
-        price_items = await rank_api.get_rank_list(filter=PRICE_CHANGE_FILTER, page=1, size=50)
-        vol_items = await vol_api.get_vol_data()
+        price_task = rank_api.get_rank_list(filter=RANK_FILTERS["price_up_7d"], page=1, size=50)
+        stock_task = rank_api.get_rank_list(filter=RANK_FILTERS["stock_asc"], page=1, size=50)
+        sell_task = rank_api.get_rank_list(filter=RANK_FILTERS["sell_decrease_7d"], page=1, size=50)
+        buy_task = rank_api.get_rank_list(filter=RANK_FILTERS["buy_increase_7d"], page=1, size=50)
+        cap_task = rank_api.get_rank_list(filter=RANK_FILTERS["market_cap_desc"], page=1, size=50)
+        vol_task = vol_api.get_vol_data()
+
+        price_items, stock_items, sell_items, buy_items, cap_items, vol_items = await asyncio.gather(
+            price_task, stock_task, sell_task, buy_task, cap_task, vol_task,
+        )
+
         return {
             "rank_data": {
                 "price_change": [item.model_dump() for item in price_items],
                 "volume": [item.model_dump() for item in vol_items],
+                "stock": [item.model_dump() for item in stock_items],
+                "sell_decrease": [item.model_dump() for item in sell_items],
+                "buy_increase": [item.model_dump() for item in buy_items],
+                "market_cap": [item.model_dump() for item in cap_items],
             }
         }
     except Exception as e:
@@ -86,19 +101,35 @@ async def analyze_opportunities_node(state: dict, *, model_factory: ModelFactory
     # Extract IDs: rank_list uses "id", vol_data uses "good_id"
     price_ids = [item["id"] for item in rank_data.get("price_change", [])]
     vol_ids = [item["good_id"] for item in rank_data.get("volume", [])]
-    top_ids = cross_filter_ranks(price_ids, vol_ids)
+    stock_ids = [item["id"] for item in rank_data.get("stock", [])]
+    sell_ids = [item["id"] for item in rank_data.get("sell_decrease", [])]
+    buy_ids = [item["id"] for item in rank_data.get("buy_increase", [])]
+    cap_ids = [item["id"] for item in rank_data.get("market_cap", [])]
+    top_ids = cross_filter_ranks(price_ids, vol_ids, stock_ids, sell_ids, buy_ids, cap_ids)
 
-    # Collect full data for top items
+    # Collect full data for top items from all dimension maps
     price_map = {item["id"]: item for item in rank_data.get("price_change", [])}
     vol_map = {item["good_id"]: item for item in rank_data.get("volume", [])}
+    stock_map = {item["id"]: item for item in rank_data.get("stock", [])}
+    sell_map = {item["id"]: item for item in rank_data.get("sell_decrease", [])}
+    buy_map = {item["id"]: item for item in rank_data.get("buy_increase", [])}
+    cap_map = {item["id"]: item for item in rank_data.get("market_cap", [])}
 
     top_items = []
     for gid in top_ids:
         entry = {}
         if gid in price_map:
-            entry["rank_data"] = price_map[gid]
+            entry["price_change"] = price_map[gid]
         if gid in vol_map:
             entry["vol_data"] = vol_map[gid]
+        if gid in stock_map:
+            entry["stock"] = stock_map[gid]
+        if gid in sell_map:
+            entry["sell_decrease"] = sell_map[gid]
+        if gid in buy_map:
+            entry["buy_increase"] = buy_map[gid]
+        if gid in cap_map:
+            entry["market_cap"] = cap_map[gid]
         if entry:
             top_items.append(entry)
 

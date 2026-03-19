@@ -1,4 +1,7 @@
-from csqaq.components.agents.scout import cross_filter_ranks
+import pytest
+from unittest.mock import AsyncMock
+
+from csqaq.components.agents.scout import cross_filter_ranks, fetch_rank_data_node
 
 
 class TestCrossFilterRanksVariadic:
@@ -33,3 +36,39 @@ class TestCrossFilterRanksVariadic:
     def test_empty_lists(self):
         result = cross_filter_ranks([], [], min_overlap=2)
         assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_multi_dimension():
+    rank_api = AsyncMock()
+    vol_api = AsyncMock()
+
+    # Mock rank_api to return items with id field for each filter call
+    rank_api.get_rank_list.return_value = [
+        type("Item", (), {"id": i, "model_dump": lambda self=None, i=i: {"id": i}})()
+        for i in range(1, 6)
+    ]
+    vol_api.get_vol_data.return_value = [
+        type("Vol", (), {"good_id": i, "model_dump": lambda self=None, i=i: {"good_id": i}})()
+        for i in range(3, 8)
+    ]
+
+    result = await fetch_rank_data_node({}, rank_api=rank_api, vol_api=vol_api)
+    rank_data = result["rank_data"]
+
+    # Should have multiple dimension keys
+    assert "price_change" in rank_data
+    assert "volume" in rank_data
+    assert "stock" in rank_data
+    assert "sell_decrease" in rank_data
+    assert "buy_increase" in rank_data
+    assert "market_cap" in rank_data
+
+    # rank_api.get_rank_list should be called 5 times (once per filter dimension)
+    assert rank_api.get_rank_list.call_count == 5
+    # Verify different filters were passed
+    filter_args = [call.kwargs.get("filter") or call.args[0] for call in rank_api.get_rank_list.call_args_list]
+    filter_strs = [str(f) for f in filter_args]
+    assert any("价格" in s for s in filter_strs)
+    assert any("存世量" in s for s in filter_strs)
+    assert any("在售数量" in s for s in filter_strs)
