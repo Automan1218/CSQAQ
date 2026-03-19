@@ -1,6 +1,7 @@
 """Scout Agent -- discovers investment opportunities from rankings + volume."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections import Counter
@@ -27,28 +28,30 @@ SCOUT_ANALYST_PROMPT = """你是一个专业的 CS2 饰品市场分析师。你�
 
 
 def cross_filter_ranks(
-    price_ids: list[int],
-    vol_ids: list[int],
+    *id_lists: list[int],
     top_n: int = 10,
     min_overlap: int = 2,
 ) -> list[int]:
-    """Cross-filter items appearing in both price change and volume rankings.
+    """Cross-filter items appearing in N ranking lists.
 
     Returns list of good_ids sorted by overlap count (descending).
-    If fewer than 5 results, backfills from price_ids.
+    If fewer than 5 results, backfills from the first list.
     """
     counter: Counter[int] = Counter()
-    counter.update(price_ids)
-    counter.update(vol_ids)
+    for id_list in id_lists:
+        counter.update(id_list)
 
     filtered = [gid for gid, count in counter.most_common() if count >= min_overlap]
 
-    if len(filtered) < 5:
-        seen = set(filtered)
-        for gid in price_ids:
-            if gid not in seen:
-                filtered.append(gid)
-                seen.add(gid)
+    if len(filtered) == 0 and id_lists:
+        seen: set[int] = set()
+        for id_list in id_lists:
+            for gid in id_list:
+                if gid not in seen:
+                    filtered.append(gid)
+                    seen.add(gid)
+                if len(filtered) >= top_n:
+                    break
             if len(filtered) >= top_n:
                 break
 
