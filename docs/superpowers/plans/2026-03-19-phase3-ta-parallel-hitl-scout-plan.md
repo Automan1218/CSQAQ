@@ -636,6 +636,8 @@ class IndexKlineBar(BaseModel):
         return int(self.t)
 ```
 
+**Note:** Spec says `@field_validator` to convert `t` to int, but we use a `@property` instead — this keeps the original string `t` field intact for serialization while providing typed access via `timestamp_int`. Better design than mutating the field.
+
 Add to `src/csqaq/infrastructure/csqaq_client/market.py`:
 ```python
 from .market_schemas import HomeData, IndexKlineBar, SubData
@@ -648,10 +650,40 @@ async def get_index_kline(self, sub_id: int = 1, period: str = "1day") -> list[I
     return []
 ```
 
+Update `src/csqaq/infrastructure/csqaq_client/__init__.py`:
+- Add `IndexKlineBar` to imports from `.market_schemas`
+- Add `IndexKlineBar` to `__all__`
+
 Add mock to `tests/conftest.py` in `mock_market_api` fixture:
 ```python
 index_kline = json.loads((FIXTURES / "index_kline_response.json").read_text(encoding="utf-8"))
 api.get_index_kline.return_value = [IndexKlineBar.model_validate(k) for k in index_kline]
+```
+
+Add test for `analyze_index_kline` (since `IndexKlineBar` schema now exists):
+
+```python
+# append to tests/test_infrastructure/test_index_kline.py
+from csqaq.components.analysis.analyzer import analyze_index_kline
+
+class TestAnalyzeIndexKline:
+    def test_skips_volume_divergence(self):
+        bars = [
+            IndexKlineBar.model_validate({"t": str(1700000000000 + i * 86400000), "o": 1400.0 + i, "c": 1400.0 + i * 1.5, "h": 1410.0 + i, "l": 1390.0 + i, "v": 0})
+            for i in range(40)
+        ]
+        report = analyze_index_kline(bars, period="1day")
+        # No volume-price divergence signal should exist (v=0)
+        vol_signals = [s for s in report.signals if s.name == "volume_price_divergence"]
+        assert len(vol_signals) == 0
+
+    def test_produces_direction(self):
+        bars = [
+            IndexKlineBar.model_validate({"t": str(1700000000000 + i * 86400000), "o": 1400.0 + i, "c": 1400.0 + i * 1.5, "h": 1410.0 + i, "l": 1390.0 + i, "v": 0})
+            for i in range(40)
+        ]
+        report = analyze_index_kline(bars, period="1day")
+        assert report.overall_direction in ("bullish", "bearish", "neutral")
 ```
 
 - [ ] **Step 4: Run tests — expect PASS**
@@ -866,8 +898,14 @@ async def test_fetch_multi_dimension():
     assert "buy_increase" in rank_data
     assert "market_cap" in rank_data
 
-    # rank_api.get_rank_list should be called multiple times (once per filter)
-    assert rank_api.get_rank_list.call_count >= 5
+    # rank_api.get_rank_list should be called 5 times (once per filter dimension)
+    assert rank_api.get_rank_list.call_count == 5
+    # Verify different filters were passed
+    filter_args = [call.kwargs.get("filter") or call.args[0] for call in rank_api.get_rank_list.call_args_list]
+    filter_strs = [str(f) for f in filter_args]
+    assert any("价格" in s for s in filter_strs)
+    assert any("存世量" in s for s in filter_strs)
+    assert any("在售数量" in s for s in filter_strs)
 ```
 
 - [ ] **Step 2: Run test — expect FAIL**
@@ -1007,9 +1045,18 @@ In `src/csqaq/components/agents/advisor.py`:
 
 Update flow state TypedDicts in item_flow.py, market_flow.py, scout_flow.py:
 - Add `summary: str | None` and `action_detail: str | None` fields
-- Remove `recommendation` field references
+- Remove `recommendation` field from TypedDicts
 
 Update router_flow.py output formatting (lines 64-69, 86-91, 109-114) to use `summary` + `action_detail` instead of `recommendation`.
+
+**Breaking change — existing tests that must be updated:**
+- `tests/test_flows/test_item_flow.py` — initial state dicts contain `recommendation`, assertions reference it
+- `tests/test_flows/test_market_flow.py` — same
+- `tests/test_flows/test_scout_flow.py` — same
+- `tests/test_flows/test_router_flow.py` — output formatting assertions reference `recommendation`
+- `tests/test_e2e.py` — assertions on `recommendation` field in flow results
+
+In each file: replace `"recommendation": None` with `"summary": None, "action_detail": None` in initial state dicts. Replace assertions like `r.get("recommendation")` with `r.get("summary")`. Update expected output strings that contain "建议" to match the new `summary` + `action_detail` format.
 
 - [ ] **Step 4: Run tests — expect PASS**
 
@@ -1067,7 +1114,7 @@ C:/Users/henry/.conda/envs/CSQAQ/python.exe -m pytest tests/test_components/test
 
 In `src/csqaq/components/agents/item.py`, update `fetch_chart_node`:
 1. After fetching chart data, also call `item_api.get_item_kline(good_id)`
-2. If kline data available, call `analyze_kline(kline_bars, period="30d")`
+2. If kline data available, call `analyze_kline(kline_bars, period="1day")` (note: `periods="30d"` is the date range for `get_item_kline()`, the actual candle interval is daily)
 3. Add `ta_report` to return dict (serialized as dict via `dataclasses.asdict`)
 
 Update `ItemFlowState` in `src/csqaq/flows/item_flow.py` to include `ta_report: dict | None`.
@@ -1198,8 +1245,7 @@ async def test_parallel_flow_merges_contexts(
         "good_name": "AK-47 红线",
         "item_context": None, "market_context": None, "scout_context": None,
         "item_error": None, "market_error": None, "scout_error": None,
-        "recommendation": None, "risk_level": None,
-        "requires_confirmation": False,
+        "risk_level": None, "requires_confirmation": False,
         "summary": None, "action_detail": None,
     })
 
@@ -1236,8 +1282,8 @@ async def test_parallel_flow_error_isolation(mock_item_api, mock_market_api, moc
         "messages": [], "query": "test", "good_name": "test",
         "item_context": None, "market_context": None, "scout_context": None,
         "item_error": None, "market_error": None, "scout_error": None,
-        "recommendation": None, "risk_level": None,
-        "requires_confirmation": False, "summary": None, "action_detail": None,
+        "risk_level": None, "requires_confirmation": False,
+        "summary": None, "action_detail": None,
     })
 
     # Market failed but item should still work
@@ -1311,16 +1357,23 @@ async def _item_subflow_node(
     # Format output using summary + action_detail
 ```
 
-- [ ] **Step 2: Run full test suite**
+- [ ] **Step 2: Update existing router flow tests**
+
+In `tests/test_flows/test_router_flow.py`:
+- Update `_item_subflow_node` mock to accept new params (`market_api`, `rank_api`, `vol_api`)
+- Update assertions on output: replace `recommendation` references with `summary`/`action_detail`
+- The `build_router_flow` signature does not change (already accepts all API params)
+
+- [ ] **Step 3: Run full test suite**
 
 ```
 C:/Users/henry/.conda/envs/CSQAQ/python.exe -m pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```
-git add src/csqaq/flows/router_flow.py src/csqaq/main.py
+git add src/csqaq/flows/router_flow.py src/csqaq/main.py tests/test_flows/test_router_flow.py
 git commit -m "feat: wire Router to parallel_item_flow for item_query intent"
 ```
 
@@ -1414,7 +1467,25 @@ Add `IndexKlineBar` import and mock to `mock_market_api` fixture.
 
 - [ ] **Step 2: Update E2E tests for new output format**
 
-Update existing E2E tests to expect `summary` + `action_detail` instead of `recommendation`. Add new E2E test for parallel item flow.
+In `tests/test_e2e.py`:
+
+1. Update `test_full_item_to_advisor_pipeline`:
+   - Replace `"recommendation": None` with `"summary": None, "action_detail": None` in initial state
+   - Change assertion from `result.get("recommendation")` to `result.get("summary")`
+   - Verify `result.get("action_detail")` is not None
+
+2. Update `test_full_market_pipeline`:
+   - Same state dict and assertion updates as above
+
+3. Add new test `test_full_parallel_item_pipeline`:
+   - Uses `build_parallel_item_flow` with all 4 mock APIs
+   - Verifies at least one of `item_context`, `market_context`, `scout_context` is populated
+   - Verifies `summary` is not None
+
+4. Add new test `test_hitl_high_risk_result`:
+   - Mock LLM to return `risk_level: "high"`
+   - Verify `requires_confirmation == True`
+   - Verify both `summary` and `action_detail` are populated
 
 - [ ] **Step 3: Run full test suite**
 
