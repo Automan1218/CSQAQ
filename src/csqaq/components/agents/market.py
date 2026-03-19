@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from typing import TYPE_CHECKING
+
+from csqaq.components.analysis.analyzer import analyze_index_kline
 
 if TYPE_CHECKING:
     from csqaq.components.models.factory import ModelFactory
@@ -22,17 +25,27 @@ MARKET_ANALYST_PROMPT = """你是一个专业的 CS2 饰品市场分析师。基
 
 
 async def fetch_market_data_node(state: dict, *, market_api: "MarketAPI") -> dict:
-    """Node: fetch home data and sub-index detail."""
+    """Node: fetch home data, sub-index detail, and index K-line TA."""
     try:
         home_data = await market_api.get_home_data()
         sub_data = await market_api.get_sub_data(sub_id=1)
-        return {
-            "home_data": home_data.model_dump(),
-            "sub_data": sub_data.model_dump(),
-        }
     except Exception as e:
         logger.error("fetch_market_data_node failed: %s", e)
         return {"error": f"获取大盘数据失败: {e}"}
+
+    try:
+        bars = await market_api.get_index_kline()
+        report = analyze_index_kline(bars, period="1day")
+        index_ta_report = asdict(report)
+    except Exception as e:
+        logger.warning("get_index_kline failed, skipping TA: %s", e)
+        index_ta_report = None
+
+    return {
+        "home_data": home_data.model_dump(),
+        "sub_data": sub_data.model_dump(),
+        "index_ta_report": index_ta_report,
+    }
 
 
 async def analyze_market_node(state: dict, *, model_factory: "ModelFactory") -> dict:

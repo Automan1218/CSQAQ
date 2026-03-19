@@ -20,6 +20,7 @@ class MarketFlowState(TypedDict):
     query: str
     home_data: dict | None
     sub_data: dict | None
+    index_ta_report: dict | None
     market_context: str | None
     item_context: dict | None
     scout_context: dict | None
@@ -40,7 +41,10 @@ def _should_continue_after_fetch(state: MarketFlowState) -> str:
 def _prepare_advisor_context(state: MarketFlowState) -> dict:
     """Bridge node: pack market_context into Advisor's expected format."""
     return {
-        "market_context": {"analysis_result": state.get("market_context", "")},
+        "market_context": {
+            "analysis_result": state.get("market_context", ""),
+            "index_ta_report": state.get("index_ta_report"),
+        },
         "item_context": None,
         "scout_context": None,
     }
