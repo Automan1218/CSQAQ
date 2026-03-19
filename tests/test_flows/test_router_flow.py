@@ -7,6 +7,35 @@ from csqaq.flows.router_flow import build_router_flow
 
 
 @pytest.mark.asyncio
+async def test_router_dispatches_item_query(mock_item_api, mock_market_api, mock_rank_api, mock_vol_api):
+    """Item query should dispatch to parallel_item_flow via item_subflow node."""
+    mock_factory = MagicMock()
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = AIMessage(
+        content='{"summary": "AK红线短期偏空", "action_detail": "建议观望。", "risk_level": "low"}'
+    )
+    mock_factory.create.return_value = mock_llm
+
+    flow = build_router_flow(
+        item_api=mock_item_api,
+        market_api=mock_market_api,
+        rank_api=mock_rank_api,
+        vol_api=mock_vol_api,
+        model_factory=mock_factory,
+    )
+    result = await flow.ainvoke({
+        "messages": [],
+        "query": "AK红线最近怎么样",
+        "intent": None,
+        "item_name": None,
+        "result": None,
+        "error": None,
+    })
+    assert result.get("intent") == "item_query"
+    assert result.get("result") is not None
+
+
+@pytest.mark.asyncio
 async def test_router_dispatches_market_query():
     mock_item_api = AsyncMock()
     mock_market_api = AsyncMock()

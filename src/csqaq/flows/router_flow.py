@@ -46,26 +46,28 @@ def _dispatch(state: RouterFlowState) -> str:
 
 
 async def _item_subflow_node(
-    state: RouterFlowState, *, item_api: ItemAPI, model_factory: ModelFactory,
+    state: RouterFlowState,
+    *, item_api: ItemAPI, market_api: MarketAPI, rank_api: RankAPI, vol_api: VolAPI,
+    model_factory: ModelFactory,
 ) -> dict:
-    """Node: run item flow and format result."""
-    from csqaq.flows.item_flow import build_item_flow
+    """Node: run parallel item flow and format result."""
+    from csqaq.flows.parallel_item_flow import build_parallel_item_flow
 
-    flow = build_item_flow(item_api=item_api, model_factory=model_factory)
+    flow = build_parallel_item_flow(
+        item_api=item_api, market_api=market_api,
+        rank_api=rank_api, vol_api=vol_api, model_factory=model_factory,
+    )
     r = await flow.ainvoke({
-        "messages": [], "good_id": None,
+        "messages": [], "query": state["query"],
         "good_name": state.get("item_name") or state["query"],
-        "item_detail": None, "chart_data": None, "kline_data": None,
-        "indicators": None, "analysis_result": None,
         "item_context": None, "market_context": None, "scout_context": None,
-        "historical_advice": None, "summary": None, "action_detail": None,
-        "risk_level": None, "requires_confirmation": False, "error": None,
+        "item_error": None, "market_error": None, "scout_error": None,
+        "risk_level": None, "requires_confirmation": False,
+        "summary": None, "action_detail": None,
     })
     parts = []
-    if r.get("analysis_result"):
-        parts.append(f"分析:\n{r['analysis_result']}")
     if r.get("summary"):
-        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
+        parts.append(f"建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
         if r.get("action_detail"):
             parts.append(r["action_detail"])
     return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
@@ -132,7 +134,8 @@ def build_router_flow(
 
     graph.add_node("router", partial(_router_node, model_factory=model_factory))
     graph.add_node("item_subflow", partial(
-        _item_subflow_node, item_api=item_api, model_factory=model_factory,
+        _item_subflow_node, item_api=item_api, market_api=market_api,
+        rank_api=rank_api, vol_api=vol_api, model_factory=model_factory,
     ))
     graph.add_node("market_subflow", partial(
         _market_subflow_node, market_api=market_api, model_factory=model_factory,
