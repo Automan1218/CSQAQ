@@ -701,7 +701,7 @@ C:/Users/henry/.conda/envs/CSQAQ/python.exe -m pytest tests/ -v --tb=short
 - [ ] **Step 6: Commit**
 
 ```
-git add src/csqaq/infrastructure/csqaq_client/market_schemas.py src/csqaq/infrastructure/csqaq_client/market.py tests/fixtures/index_kline_response.json tests/test_infrastructure/test_index_kline.py tests/conftest.py
+git add src/csqaq/infrastructure/csqaq_client/market_schemas.py src/csqaq/infrastructure/csqaq_client/market.py src/csqaq/infrastructure/csqaq_client/__init__.py tests/fixtures/index_kline_response.json tests/test_infrastructure/test_index_kline.py tests/conftest.py
 git commit -m "feat: add IndexKlineBar schema and MarketAPI.get_index_kline()"
 ```
 
