@@ -22,6 +22,7 @@ class ItemFlowState(TypedDict):
     item_detail: dict | None
     chart_data: dict | None
     kline_data: list | None
+    ta_report: dict | None
     indicators: dict | None
     analysis_result: str | None
     error: str | None
@@ -48,6 +49,7 @@ def _prepare_advisor_context(state: ItemFlowState) -> dict:
             "analysis_result": state.get("analysis_result", ""),
             "item_detail": state.get("item_detail"),
             "indicators": state.get("indicators"),
+            "ta_report": state.get("ta_report"),
         },
         "market_context": None,
         "scout_context": None,

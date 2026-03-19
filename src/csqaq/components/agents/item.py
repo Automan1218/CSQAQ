@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+from csqaq.components.analysis.analyzer import analyze_kline
 from csqaq.infrastructure.analysis.indicators import TechnicalIndicators
 
 if TYPE_CHECKING:
@@ -84,10 +86,20 @@ async def fetch_chart_node(state: dict, *, item_api: ItemAPI) -> dict:
                 "price_range": f"{min(prices):.2f} - {max(prices):.2f}",
             }
 
-        return {"chart_data": chart_dict, "indicators": indicators}
+        # Fetch K-line data and compute TA report
+        ta_report = None
+        try:
+            kline_bars = await item_api.get_item_kline(good_id)
+            if kline_bars:
+                report = analyze_kline(kline_bars, period="1day")
+                ta_report = asdict(report)
+        except Exception as e:
+            logger.warning("fetch_chart_node kline/TA failed: %s", e)
+
+        return {"chart_data": chart_dict, "indicators": indicators, "ta_report": ta_report}
     except Exception as e:
         logger.warning("fetch_chart_node failed: %s", e)
-        return {"chart_data": None, "indicators": None}
+        return {"chart_data": None, "indicators": None, "ta_report": None}
 
 
 async def analyze_node(state: dict, *, model_factory: ModelFactory) -> dict:
