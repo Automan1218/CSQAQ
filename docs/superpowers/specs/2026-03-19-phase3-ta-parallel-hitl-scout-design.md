@@ -51,7 +51,7 @@ src/csqaq/components/analysis/
 
 所有方法均为 `@staticmethod`，纯函数，无副作用。
 
-**迁移计划**：`infrastructure/analysis/indicators.py` 的现有 4 个方法迁移到新模块，原位置改为 re-export（`from csqaq.components.analysis.indicators import TechnicalIndicators`）保持向后兼容。
+**迁移计划**：`infrastructure/analysis/indicators.py` 的现有 5 个方法（`moving_average`、`volatility`、`price_momentum`、`platform_spread`、`volume_trend`）迁移到新模块，原位置改为 re-export（`from csqaq.components.analysis.indicators import TechnicalIndicators`）保持向后兼容。
 
 ### 1.3 signals.py — 信号生成
 
@@ -92,9 +92,19 @@ class TAReport:
 - `analyze_kline(bars: list[KlineBar]) -> TAReport` — 单品 K 线分析
 - `analyze_index_kline(bars: list[IndexKlineBar]) -> TAReport` — 大盘指数 K 线分析
 
-**综合方向**：信号投票机制。统计 bullish/bearish 信号数量，多数胜出。平局为 neutral。
+**综合方向**：加权信号投票。每个 Signal 的 `strength` 作为投票权重，`sum(bullish strengths)` vs `sum(bearish strengths)`，差距 < 0.1 为 neutral。
 
-**指数 K 线适配**：`IndexKlineBar` 的 `v` 字段对指数恒为 0，因此 `analyze_index_kline()` 跳过量价背离信号。
+**最小数据要求**：如果输入 `bars` 不足以计算某个指标（如 MACD 需要至少 35 根 K 线），该信号检测函数返回 None（跳过），`TAReport.summary` 中注明"数据不足，部分指标未生效"。各指标最小数据量：
+
+| 指标 | 最小 K 线数 |
+|------|------------|
+| MA5/MA20 | 20 |
+| RSI(14) | 15 |
+| MACD(12,26,9) | 35 |
+| 布林带(20) | 20 |
+| 量价背离 | 10 |
+
+**指数 K 线适配**：`IndexKlineBar` 的 `v` 字段对指数恒为 0，因此 `analyze_index_kline()` 跳过量价背离信号。`IndexKlineBar.t` 为字符串时间戳，Schema 中通过 Pydantic `@field_validator` 转为 int。
 
 ---
 
@@ -186,14 +196,65 @@ async def get_index_kline(
         END
 ```
 
-### 3.3 实现
+### 3.3 State Schema
 
-1. **入口节点 `prepare_queries`**：从用户的单品查询中提取 item_name，同时生成 market 和 scout 的默认查询
-2. **三路并行**：各自调用已有的 `build_item_flow()`、`build_market_flow()`、`build_scout_flow()`
-3. **`merge_contexts` 节点**：汇总三路的 `item_context`、`market_context`、`scout_context`
-4. **统一 Advisor**：拿到完整上下文后给出综合建议
+```python
+class ParallelItemFlowState(TypedDict):
+    messages: Annotated[list, add_messages]
+    query: str                          # 原始用户查询
+    good_name: str | None               # 提取的饰品名称
 
-### 3.4 改动点
+    # 三路并行结果
+    item_context: dict | None           # Item Flow 的分析结果
+    market_context: dict | None         # Market Flow 的分析结果
+    scout_context: dict | None          # Scout Flow 的分析结果
+
+    # 各路错误（不阻塞其他路）
+    item_error: str | None
+    market_error: str | None
+    scout_error: str | None
+
+    # Advisor 输出
+    recommendation: str | None
+    risk_level: str | None
+    requires_confirmation: bool
+    summary: str | None                 # 分析摘要（始终输出）
+    action_detail: str | None           # 操作建议（高风险时需确认）
+```
+
+### 3.4 实现
+
+1. **入口节点 `prepare_queries`**：从用户查询中提取 `good_name`。Market 和 Scout 子 flow 不需要 query 参数（它们的 fetch 节点直接调 API），只需启动即可。
+
+2. **三路并行 `run_parallel` 节点**：在单个节点内用 `asyncio.gather()` 并行调用三个已编译子 flow。每路用 `try/except` 包裹，失败时写入对应 `*_error` 字段，不影响其他路。
+
+```python
+async def run_parallel(state, *, item_flow, market_flow, scout_flow):
+    item_task = _run_item(state, item_flow)
+    market_task = _run_market(market_flow)
+    scout_task = _run_scout(scout_flow)
+
+    item_result, market_result, scout_result = await asyncio.gather(
+        item_task, market_task, scout_task, return_exceptions=True
+    )
+
+    return {
+        "item_context": item_result.get("item_context") if not isinstance(item_result, Exception) else None,
+        "market_context": market_result.get("market_context") if not isinstance(market_result, Exception) else None,
+        "scout_context": scout_result.get("scout_context") if not isinstance(scout_result, Exception) else None,
+        "item_error": str(item_result) if isinstance(item_result, Exception) else None,
+        "market_error": str(market_result) if isinstance(market_result, Exception) else None,
+        "scout_error": str(scout_result) if isinstance(scout_result, Exception) else None,
+    }
+```
+
+3. **`merge_contexts` 节点**：将三路非 None 的 context 合并，传入 Advisor。如果三路都失败，直接返回错误。
+
+4. **统一 Advisor**：拿到合并后的上下文，给出综合建议。
+
+**图结构**：`prepare_queries → run_parallel → merge_contexts → advise → END`
+
+### 3.5 改动点
 
 - 三个子 flow 中各自的嵌入式 Advisor **保留**（独立使用时仍需要）
 - `parallel_item_flow` 是新的"增强版"入口
@@ -238,16 +299,35 @@ risk_level == "high"?
 
 ### 4.3 实现
 
-**Advisor 输出改为两段结构**：
-- `summary`：分析摘要 + 风险提示（始终输出）
-- `action_detail`：具体操作建议（高风险时需确认才输出）
+**方案**：Flow 完整执行，CLI 层门控输出（approach a）。不在 Flow 层做 blocking I/O。
 
-**Flow 层**：在 Advisor 输出后加 `hitl_gate` 条件节点，high risk 时中断图执行。
+**Advisor 输出改为两段结构**。现有 Advisor 返回：
+```python
+{"recommendation": str, "risk_level": str, "requires_confirmation": bool}
+```
+改为：
+```python
+{
+    "summary": str,              # 分析摘要 + 风险提示（始终输出）
+    "action_detail": str,        # 具体操作建议（高风险时需确认才输出）
+    "risk_level": str,           # "low" | "medium" | "high"
+    "requires_confirmation": bool # risk_level == "high" 时为 True
+}
+```
+`recommendation` 字段废弃，由 `summary` + `action_detail` 替代。现有三个子 flow 的嵌入式 Advisor 同步更新。
 
-**CLI 层**：`cli.py` 检测到 `requires_confirmation == True` 时，先打印 summary，等用户输入后再决定是否打印 action_detail。
+**Advisor Prompt 变更**：要求 LLM 输出 JSON 中将分析摘要放在 `summary`，具体操作建议放在 `action_detail`。
+
+**Flow 层**：无变化。Flow 正常执行到 END，Advisor 输出包含 `summary` 和 `action_detail`。
+
+**CLI 层**：`cli.py` 检测到 `requires_confirmation == True` 时：
+1. 打印 `summary` + 风险警告
+2. 提示用户输入（"输入'继续'查看操作建议，其他任意键取消"）
+3. 确认 → 打印 `action_detail`；取消 → 打印"已取消，建议观望"
 
 ### 4.4 不做
 
+- 不在 Flow 层做 blocking I/O 或中断（纯数据流，中断逻辑全在 CLI）
 - 不做超时自动取消（CLI 场景等用户即可）
 - Advisor LLM prompt 最小改动，只要求输出时把"分析"和"操作建议"分段
 
@@ -274,6 +354,8 @@ risk_level == "high"?
 
 ### 5.3 交叉筛选升级
 
+**Breaking change**：现有 `cross_filter_ranks(price_ids, vol_ids, ...)` 改为可变参数签名。调用方 `analyze_opportunities_node` 需同步更新。
+
 ```python
 def cross_filter_ranks(
     *id_lists: list[int],    # 可变数量的排行 ID 列表
@@ -289,7 +371,7 @@ def cross_filter_ranks(
 
 ### 5.4 RankAPI filter 参数常量
 
-在 `rank.py` 或新建 `rank_filters.py` 中定义常量：
+新建 `src/csqaq/infrastructure/csqaq_client/rank_filters.py` 定义常量：
 
 ```python
 RANK_FILTERS = {
@@ -317,8 +399,10 @@ RANK_FILTERS = {
 | `src/csqaq/components/analysis/analyzer.py` | TA 报告生成 |
 | `src/csqaq/flows/parallel_item_flow.py` | 并行增强版单品分析 |
 | `src/csqaq/infrastructure/csqaq_client/rank_filters.py` | 排行榜 filter 常量 |
-| `tests/test_components/test_analysis/` | TA 模块测试 |
+| `tests/test_components/test_analysis/` | TA 模块测试（indicators, signals, analyzer） |
+| `tests/test_components/test_scout_multi_dimension.py` | Scout 多维度交叉筛选测试 |
 | `tests/test_flows/test_parallel_item_flow.py` | 并行 flow 测试 |
+| `tests/test_flows/test_hitl_gate.py` | HITL 门控测试（flow 返回值 + CLI 行为） |
 | `tests/fixtures/index_kline_response.json` | 大盘 K 线 fixture |
 
 ### 修改文件
@@ -331,7 +415,7 @@ RANK_FILTERS = {
 | `src/csqaq/components/agents/market.py` | 集成 TA 分析 |
 | `src/csqaq/components/agents/item.py` | 集成 TA 分析 |
 | `src/csqaq/components/agents/scout.py` | 多维度 fetch + 交叉筛选升级 |
-| `src/csqaq/components/agents/advisor.py` | 输出两段结构（summary + action_detail） |
+| `src/csqaq/components/agents/advisor.py` | 输出两段结构（summary + action_detail），废弃 recommendation 字段 |
 | `src/csqaq/flows/router_flow.py` | item_query 改为调用 parallel_item_flow |
 | `src/csqaq/main.py` | 注入新依赖 |
 | `src/csqaq/api/cli.py` | HITL 确认逻辑 |
@@ -343,6 +427,8 @@ RANK_FILTERS = {
 ## 约束与风险
 
 1. **指数 K 线 volume 恒为 0**：`analyze_index_kline()` 必须跳过量价背离信号
-2. **排行榜 API 多次调用**：Scout 全维度需要 5-6 次 `get_rank_list()` 调用，需注意 rate limit
-3. **并行子图的错误隔离**：三路并行中某一路失败不应阻塞其他两路，merge 节点需要容错
-4. **HITL 中断只在 CLI 层**：Flow 层不做 blocking I/O，中断逻辑在 CLI 层处理
+2. **排行榜 API 多次调用**：Scout 全维度需要 5-6 次 `get_rank_list()` 调用。缓解策略：用 `asyncio.gather()` 并发调用，CSQAQClient 的 token-bucket rate limiter 会自动控制节奏。如果 rate_limit=1.0 导致过慢（6秒+），可在 Scout 场景下调高限速或只取 top 3 维度。
+3. **并行子图的错误隔离**：三路并行中某一路失败不应阻塞其他两路。`run_parallel` 节点用 `asyncio.gather(return_exceptions=True)` 捕获异常，写入 `*_error` 字段。
+4. **HITL 中断只在 CLI 层**：Flow 层不做 blocking I/O。Flow 正常执行到 END，CLI 层根据 `requires_confirmation` 门控 `action_detail` 的输出。
+5. **TA 指标最小数据量**：K 线数据不足时，对应信号返回 None 而非误导性结果。`TAReport.summary` 注明数据缺失。
+6. **`cross_filter_ranks` 签名变更**：Breaking change，`analyze_opportunities_node` 调用方需同步更新。
