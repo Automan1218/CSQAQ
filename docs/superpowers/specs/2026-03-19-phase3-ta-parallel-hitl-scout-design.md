@@ -6,6 +6,18 @@ Phase 3 在 Phase 2（Market/Scout/Router）基础上，引入股市技术分析
 
 CS2 饰品市场本质上是一个简化版金融市场（有 K 线、成交量、涨跌幅、贪婪指数），股市中的 MA、MACD、RSI、布林带等技术分析方法完全适用。
 
+### 领域约束
+
+1. **T+7 交易锁定**：CS2 饰品购买后有 7 天冷却期，不可转售。这意味着：
+   - 小时级信号（1h MA 交叉等）参考价值低 — 无法即时操作
+   - 日线/周线级别的中长期信号才是可操作的核心
+   - Advisor 的建议必须考虑 7 天锁定期带来的流动性风险
+
+2. **内幕消息影响**：游戏更新预告、武器箱停产、赛事贴纸发布等内幕信息会导致单品价格突变。纯技术分析对此无能为力。这意味着：
+   - 单品 TA 信号应标注"仅基于历史价格，不含消息面"
+   - 并行拉取大盘 + Scout 上下文的价值更大 — 如果单品突然异动但大盘平稳，很可能是消息面驱动
+   - Advisor 在遇到技术面和消息面矛盾时，应给出保守建议
+
 ### 功能清单
 
 | # | 功能 | 说明 |
@@ -66,15 +78,17 @@ class Signal:
 
 信号检测函数：
 
-| 信号 | 函数 | 触发条件 |
-|------|------|----------|
-| MA 交叉 | `detect_ma_crossover(prices, short=5, long=20)` | MA5 上穿/下穿 MA20 |
-| RSI 极端 | `detect_rsi_extreme(prices, period=14)` | RSI > 70 超买 / RSI < 30 超卖 |
-| MACD 交叉 | `detect_macd_crossover(prices)` | MACD 线上穿/下穿信号线 |
-| 布林突破 | `detect_bollinger_breakout(prices)` | 价格突破上轨/下轨 |
-| 量价背离 | `detect_volume_price_divergence(prices, volumes)` | 价格涨但量跌 / 价格跌但量涨 |
+| 信号 | 函数 | 触发条件 | 默认 strength |
+|------|------|----------|--------------|
+| MA 交叉 | `detect_ma_crossover(prices, short=5, long=20)` | MA5 上穿/下穿 MA20 | 0.7（日线）/ 0.3（小时线） |
+| RSI 极端 | `detect_rsi_extreme(prices, period=14)` | RSI > 70 超买 / RSI < 30 超卖 | 0.8 |
+| MACD 交叉 | `detect_macd_crossover(prices)` | MACD 线上穿/下穿信号线 | 0.7 |
+| 布林突破 | `detect_bollinger_breakout(prices)` | 价格突破上轨/下轨 | 0.6 |
+| 量价背离 | `detect_volume_price_divergence(prices, volumes)` | 价格涨但量跌 / 价格跌但量涨 | 0.9（高权重，T+7 市场中量价关系更可靠） |
 
 每个函数返回 `Signal | None`（无信号时返回 None）。
+
+**T+7 适配**：由于 7 天交易锁定，小时级信号 strength 降权（× 0.4），日线及以上信号保持原权重。`analyze_kline()` 接受 `period` 参数以区分时间级别。
 
 ### 1.4 analyzer.py — TA 报告
 
