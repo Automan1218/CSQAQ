@@ -19,6 +19,7 @@ ADVISOR_SYSTEM_PROMPT = """你是一位经验丰富的 CS2 饰品投资顾问。
 - item_context: 单品分析结果
 - market_context: 大盘分析结果
 - scout_context: 机会发现结果
+- inventory_context: 存世量趋势分析（库存变化趋势、庄家行为判断等）
 - historical_advice: 历史分析参考
 
 请综合分析后，输出严格 JSON 格式：
@@ -46,6 +47,8 @@ async def advise_node(state: dict, *, model_factory: ModelFactory) -> dict:
         context_parts.append(f"## 大盘分析\n{json.dumps(state['market_context'], ensure_ascii=False, indent=2)}")
     if state.get("scout_context"):
         context_parts.append(f"## 机会发现\n{json.dumps(state['scout_context'], ensure_ascii=False, indent=2)}")
+    if state.get("inventory_context"):
+        context_parts.append(f"## 存世量分析\n{state['inventory_context']}")
 
     if not context_parts:
         return {
