@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from langchain_core.messages import AIMessage
 
-from csqaq.components.router import IntentResult, classify_intent_by_keywords, route_query
+from csqaq.components.router import IntentResult, classify_intent_by_keywords, classify_intent_by_llm, route_query
 
 
 class TestKeywordRouter:
@@ -35,6 +35,36 @@ class TestKeywordRouter:
         result = classify_intent_by_keywords("大盘行情中有什么值得买的")
         assert result is not None
         assert result.intent == "market_query"
+
+
+class TestInventoryIntent:
+    def test_keyword_inventory(self):
+        result = classify_intent_by_keywords("AK47红线的存世量趋势")
+        assert result is not None
+        assert result.intent == "inventory_query"
+
+    def test_keyword_absorption(self):
+        result = classify_intent_by_keywords("有没有人在吸货")
+        assert result is not None
+        assert result.intent == "inventory_query"
+
+    def test_keyword_control(self):
+        result = classify_intent_by_keywords("这个饰品有控盘嫌疑吗")
+        assert result is not None
+        assert result.intent == "inventory_query"
+
+    @pytest.mark.asyncio
+    async def test_llm_inventory_intent(self):
+        model_factory = MagicMock()
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = MagicMock(
+            content='{"intent": "inventory_query", "item_name": "AK-47 红线"}'
+        )
+        model_factory.create.return_value = mock_llm
+
+        result = await classify_intent_by_llm("AK47红线的存世量变化怎么样", model_factory)
+        assert result.intent == "inventory_query"
+        assert result.item_name == "AK-47 红线"
 
 
 @pytest.mark.asyncio
