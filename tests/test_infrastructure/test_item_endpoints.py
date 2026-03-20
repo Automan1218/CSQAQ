@@ -7,6 +7,7 @@ import respx
 
 from csqaq.infrastructure.csqaq_client.client import CSQAQClient
 from csqaq.infrastructure.csqaq_client.item import ItemAPI
+from csqaq.infrastructure.csqaq_client.inventory_schemas import InventoryStat
 from csqaq.infrastructure.csqaq_client.schemas import (
     ChartData,
     ItemDetail,
@@ -75,3 +76,15 @@ async def test_get_item_kline(item_api):
     bars = await item_api.get_item_kline(7310, platform="buff", periods="30d")
     assert len(bars) == 2
     assert isinstance(bars[0], KlineBar)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_item_statistic(item_api):
+    data = json.loads((FIXTURES / "statistic_response.json").read_text(encoding="utf-8"))
+    respx.get(f"{BASE}/info/good/statistic").mock(
+        return_value=httpx.Response(200, json={"code": 0, "data": data})
+    )
+    stats = await item_api.get_item_statistic(7310)
+    assert len(stats) > 0
+    assert isinstance(stats[0], InventoryStat)

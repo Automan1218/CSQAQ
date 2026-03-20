@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from .inventory_schemas import InventoryStat
 from .schemas import ChartData, ItemDetail, KlineBar, SuggestItem
 
 if TYPE_CHECKING:
@@ -64,3 +66,16 @@ class ItemAPI:
         if isinstance(data, list):
             return [KlineBar.model_validate(bar) for bar in data]
         return []
+
+    async def get_item_statistic(self, good_id: int) -> list[InventoryStat]:
+        """Get 90-day inventory trend. GET /info/good/statistic
+
+        Note: This is the only GET method in ItemAPI — all others use POST.
+        This matches the external API spec for this endpoint.
+        """
+        data = await self._client.get("/info/good/statistic", params={"id": str(good_id)})
+        if not isinstance(data, list):
+            return []
+        stats = [InventoryStat.model_validate(item) for item in data]
+        cutoff = (datetime.now() - timedelta(days=90)).isoformat()
+        return [s for s in stats if s.created_at >= cutoff]

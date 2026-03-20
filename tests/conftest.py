@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from csqaq.infrastructure.csqaq_client.inventory_schemas import InventoryStat
 from csqaq.infrastructure.csqaq_client.market_schemas import HomeData, IndexKlineBar, SubData
 from csqaq.infrastructure.csqaq_client.rank_schemas import RankItem
 from csqaq.infrastructure.csqaq_client.schemas import (
@@ -38,6 +39,9 @@ def mock_item_api():
 
     kline_data = json.loads((FIXTURES / "kline_response.json").read_text(encoding="utf-8"))
     api.get_item_kline.return_value = [KlineBar.model_validate(k) for k in kline_data]
+
+    stat_data = json.loads((FIXTURES / "statistic_response.json").read_text(encoding="utf-8"))
+    api.get_item_statistic.return_value = [InventoryStat.model_validate(s) for s in stat_data]
 
     return api
 
