@@ -3,10 +3,27 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from rich.logging import RichHandler
 
 from csqaq.config import Settings
+
+
+@dataclass
+class RunQueryResult:
+    """Structured result returned by run_query."""
+
+    summary: str
+    action_detail: str
+    risk_level: str
+    requires_confirmation: bool
+
+    def full_text(self) -> str:
+        return f"{self.summary}\n\n{self.action_detail}"
+
+    def summary_text(self) -> str:
+        return self.summary
 
 
 def setup_logging() -> None:
@@ -103,8 +120,8 @@ class App:
             await self._database.close()
 
 
-async def run_query(app: App, query: str) -> str:
-    """Run any query through the router flow."""
+async def run_query(app: App, query: str) -> RunQueryResult:
+    """Run any query through the router flow, returning a structured result."""
     from csqaq.flows.router_flow import build_router_flow
 
     router_flow = build_router_flow(
@@ -112,11 +129,26 @@ async def run_query(app: App, query: str) -> str:
         rank_api=app.rank_api, vol_api=app.vol_api,
         model_factory=app.model_factory,
     )
-    result = await router_flow.ainvoke({
+    r = await router_flow.ainvoke({
         "messages": [], "query": query, "intent": None,
         "item_name": None, "result": None, "error": None,
+        "requires_confirmation": False, "risk_level": None,
+        "summary": None, "action_detail": None,
     })
-    return result.get("result") or f"查询失败: {result.get('error', '未知错误')}"
+    if r.get("error") and not r.get("summary"):
+        error_msg = f"查询失败: {r['error']}"
+        return RunQueryResult(
+            summary=error_msg,
+            action_detail="",
+            risk_level="unknown",
+            requires_confirmation=False,
+        )
+    return RunQueryResult(
+        summary=r.get("summary") or r.get("result") or "查询完成",
+        action_detail=r.get("action_detail") or "",
+        risk_level=r.get("risk_level") or "unknown",
+        requires_confirmation=r.get("requires_confirmation", False),
+    )
 
 
 def cli_entry() -> None:

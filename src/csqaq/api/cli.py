@@ -10,10 +10,23 @@ from rich.console import Console
 from rich.panel import Panel
 
 from csqaq.config import Settings
-from csqaq.main import App, run_query, setup_logging
+from csqaq.main import App, RunQueryResult, run_query, setup_logging
 
 app = typer.Typer(name="csqaq", help="CS2 饰品投资分析系统")
 console = Console()
+
+
+def _display_result(result: RunQueryResult) -> None:
+    """Display a RunQueryResult, gating high-risk results behind confirmation."""
+    if result.requires_confirmation:
+        console.print(Panel(result.summary_text(), title="[red]⚠ HIGH RISK[/red]", border_style="red"))
+        answer = console.input("输入'继续'查看操作建议，其他任意键取消: ")
+        if answer.strip() == "继续":
+            console.print(Panel(result.action_detail, title="操作建议", border_style="yellow"))
+        else:
+            console.print("[dim]已取消，建议观望[/dim]")
+    else:
+        console.print(Panel(result.full_text(), title="CSQAQ 分析结果", border_style="blue"))
 
 
 def _load_settings() -> Settings:
@@ -34,13 +47,13 @@ def chat(query: str | None = typer.Argument(None, help="查询内容，如 'AK�
     if query:
         # Single query mode
         result = asyncio.run(_single_query(settings, query))
-        console.print(Panel(result, title="CSQAQ 分析结果", border_style="blue"))
+        _display_result(result)
     else:
         # Interactive mode
         asyncio.run(_interactive_mode(settings))
 
 
-async def _single_query(settings: Settings, query: str) -> str:
+async def _single_query(settings: Settings, query: str) -> RunQueryResult:
     application = App(settings)
     await application.init()
     try:
@@ -62,7 +75,7 @@ async def _interactive_mode(settings: Settings) -> None:
                 continue
             with console.status("分析中..."):
                 result = await run_query(application, query.strip())
-            console.print(Panel(result, title="分析结果", border_style="blue"))
+            _display_result(result)
             console.print()
     except (KeyboardInterrupt, EOFError):
         pass

@@ -24,6 +24,10 @@ class RouterFlowState(TypedDict):
     item_name: str | None
     result: str | None
     error: str | None
+    requires_confirmation: bool
+    risk_level: str | None
+    summary: str | None
+    action_detail: str | None
 
 
 async def _router_node(state: RouterFlowState, *, model_factory: ModelFactory) -> dict:
@@ -70,7 +74,13 @@ async def _item_subflow_node(
         parts.append(f"建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
         if r.get("action_detail"):
             parts.append(r["action_detail"])
-    return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
+    return {
+        "result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}",
+        "requires_confirmation": r.get("requires_confirmation", False),
+        "risk_level": r.get("risk_level"),
+        "summary": r.get("summary"),
+        "action_detail": r.get("action_detail"),
+    }
 
 
 async def _market_subflow_node(
@@ -94,7 +104,13 @@ async def _market_subflow_node(
         parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
         if r.get("action_detail"):
             parts.append(r["action_detail"])
-    return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
+    return {
+        "result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}",
+        "requires_confirmation": r.get("requires_confirmation", False),
+        "risk_level": r.get("risk_level"),
+        "summary": r.get("summary"),
+        "action_detail": r.get("action_detail"),
+    }
 
 
 async def _scout_subflow_node(
@@ -119,7 +135,13 @@ async def _scout_subflow_node(
         parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
         if r.get("action_detail"):
             parts.append(r["action_detail"])
-    return {"result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}"}
+    return {
+        "result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}",
+        "requires_confirmation": r.get("requires_confirmation", False),
+        "risk_level": r.get("risk_level"),
+        "summary": r.get("summary"),
+        "action_detail": r.get("action_detail"),
+    }
 
 
 def build_router_flow(
