@@ -30,6 +30,10 @@ async def test_router_dispatches_item_query(mock_item_api, mock_market_api, mock
         "item_name": None,
         "result": None,
         "error": None,
+        "requires_confirmation": False,
+        "risk_level": None,
+        "summary": None,
+        "action_detail": None,
     })
     assert result.get("intent") == "item_query"
     assert result.get("result") is not None
@@ -72,3 +76,37 @@ async def test_router_dispatches_market_query():
     })
     assert result.get("intent") == "market_query"
     assert result.get("result") is not None
+
+
+@pytest.mark.asyncio
+async def test_router_dispatches_inventory_query(mock_item_api, mock_market_api, mock_rank_api, mock_vol_api):
+    """Inventory query should dispatch to inventory_flow via inventory_subflow node."""
+    model_factory = MagicMock()
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = AIMessage(
+        content='{"summary": "存世量下降", "action_detail": "观望", "risk_level": "low"}'
+    )
+    model_factory.create.return_value = mock_llm
+
+    flow = build_router_flow(
+        item_api=mock_item_api,
+        market_api=mock_market_api,
+        rank_api=mock_rank_api,
+        vol_api=mock_vol_api,
+        model_factory=model_factory,
+    )
+    result = await flow.ainvoke({
+        "messages": [],
+        "query": "AK-47红线的存世量趋势",
+        "intent": None,
+        "item_name": None,
+        "result": None,
+        "error": None,
+        "requires_confirmation": False,
+        "risk_level": None,
+        "summary": None,
+        "action_detail": None,
+    })
+
+    assert result.get("intent") == "inventory_query"
+    assert result.get("summary") is not None

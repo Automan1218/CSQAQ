@@ -46,6 +46,8 @@ def _dispatch(state: RouterFlowState) -> str:
         return "market_subflow"
     elif intent == "scout_query":
         return "scout_subflow"
+    elif intent == "inventory_query":
+        return "inventory_subflow"
     return "item_subflow"
 
 
@@ -64,8 +66,9 @@ async def _item_subflow_node(
     r = await flow.ainvoke({
         "messages": [], "query": state["query"],
         "good_name": state.get("item_name") or state["query"],
+        "good_id": None, "item_detail": None, "inventory_context": None,
         "item_context": None, "market_context": None, "scout_context": None,
-        "item_error": None, "market_error": None, "scout_error": None,
+        "item_error": None, "market_error": None, "scout_error": None, "inventory_error": None,
         "risk_level": None, "requires_confirmation": False,
         "summary": None, "action_detail": None,
     })
@@ -144,6 +147,39 @@ async def _scout_subflow_node(
     }
 
 
+async def _inventory_subflow_node(
+    state: RouterFlowState,
+    *, item_api: ItemAPI, model_factory: ModelFactory,
+) -> dict:
+    """Node: run inventory flow and format result."""
+    from csqaq.flows.inventory_flow import build_inventory_flow
+
+    flow = build_inventory_flow(item_api=item_api, model_factory=model_factory)
+    r = await flow.ainvoke({
+        "messages": [], "query": state["query"],
+        "good_name": state.get("item_name") or state["query"],
+        "good_id": None, "item_detail": None,
+        "inventory_stats": None, "inventory_report": None, "inventory_context": None,
+        "item_context": None, "market_context": None, "scout_context": None,
+        "summary": None, "action_detail": None,
+        "risk_level": None, "requires_confirmation": False, "error": None,
+    })
+    parts = []
+    if r.get("inventory_context"):
+        parts.append(f"存世量分析:\n{r['inventory_context']}")
+    if r.get("summary"):
+        parts.append(f"\n建议 (风险: {r.get('risk_level', 'unknown')}):\n{r['summary']}")
+        if r.get("action_detail"):
+            parts.append(r["action_detail"])
+    return {
+        "result": "\n".join(parts) if parts else f"查询失败: {r.get('error', '未知错误')}",
+        "requires_confirmation": r.get("requires_confirmation", False),
+        "risk_level": r.get("risk_level"),
+        "summary": r.get("summary"),
+        "action_detail": r.get("action_detail"),
+    }
+
+
 def build_router_flow(
     item_api: ItemAPI,
     market_api: MarketAPI,
@@ -165,14 +201,23 @@ def build_router_flow(
     graph.add_node("scout_subflow", partial(
         _scout_subflow_node, rank_api=rank_api, vol_api=vol_api, model_factory=model_factory,
     ))
+    graph.add_node("inventory_subflow", partial(
+        _inventory_subflow_node, item_api=item_api, model_factory=model_factory,
+    ))
 
     graph.set_entry_point("router")
     graph.add_conditional_edges(
         "router", _dispatch,
-        {"item_subflow": "item_subflow", "market_subflow": "market_subflow", "scout_subflow": "scout_subflow"},
+        {
+            "item_subflow": "item_subflow",
+            "market_subflow": "market_subflow",
+            "scout_subflow": "scout_subflow",
+            "inventory_subflow": "inventory_subflow",
+        },
     )
     graph.add_edge("item_subflow", END)
     graph.add_edge("market_subflow", END)
     graph.add_edge("scout_subflow", END)
+    graph.add_edge("inventory_subflow", END)
 
     return graph.compile()
