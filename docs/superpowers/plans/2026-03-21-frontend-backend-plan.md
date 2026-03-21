@@ -778,9 +778,18 @@ export interface RateData {
   count_positive_7: number;
   count_negative_7: number;
   count_zero_7: number;
+  count_positive_15: number;
+  count_negative_15: number;
+  count_zero_15: number;
   count_positive_30: number;
   count_negative_30: number;
   count_zero_30: number;
+  count_positive_90: number;
+  count_negative_90: number;
+  count_zero_90: number;
+  count_positive_180: number;
+  count_negative_180: number;
+  count_zero_180: number;
 }
 
 export interface GreedyStatus {
@@ -791,29 +800,44 @@ export interface GreedyStatus {
 export interface OnlineNumber {
   current_number: number;
   today_peak: number;
+  month_peak: number;
+  month_player: number;
+  same_month_player: number;
+  same_time_number: number;
   rate: number;
+  same_time_number_week: number;
+  rate_week: number;
+  created_at: string;
 }
 
 export interface HomeData {
   sub_index_data: SubIndexItem[];
+  chg_type_data: Record<string, unknown>[];
+  chg_price_data: Record<string, unknown>[];
   rate_data: RateData;
   online_number: OnlineNumber;
   greedy_status: GreedyStatus;
-  chg_type_data: Record<string, unknown>[];
-  chg_price_data: Record<string, unknown>[];
+  online_chart: Record<string, unknown>[];
+  greedy: unknown[];
+  alteration: Record<string, unknown>[];
+  view_count: Record<string, unknown>[];
+  card_price: Record<string, unknown>[];
+}
+
+export interface SubIndexCount {
+  name: string;
+  img: string;
+  now: number;
+  amplitude: number;
+  rate: number;
+  max_value: number;
+  min_value: number;
+  consecutive_days: number;
 }
 
 export interface SubData {
   timestamp: number[];
-  count: {
-    name: string;
-    now: number;
-    amplitude: number;
-    rate: number;
-    max_value: number;
-    min_value: number;
-    consecutive_days: number;
-  };
+  count: SubIndexCount;
   main_data: number[][];
   hourly_list: number[];
 }
@@ -853,8 +877,10 @@ export interface VolItem {
   img: string;
   group: string;
   statistic: number;
+  updated_at: string;
   avg_price: number;
   sum_price: number;
+  special: number;
 }
 
 // === WebSocket types ===
@@ -1010,10 +1036,16 @@ const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Lazy accessor to break circular import (authStore imports apiClient)
+let getAuthStore: (() => import('../stores/authStore').AuthState) | null = null;
+
+export function setAuthStoreAccessor(accessor: () => import('../stores/authStore').AuthState) {
+  getAuthStore = accessor;
+}
+
 // Request interceptor: attach access token
 apiClient.interceptors.request.use((config) => {
-  const { useAuthStore } = require('../stores/authStore');
-  const token = useAuthStore.getState().accessToken;
+  const token = getAuthStore?.()?.accessToken;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -1028,18 +1060,17 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        const { useAuthStore } = require('../stores/authStore');
-        const refreshed = await useAuthStore.getState().refreshToken();
+        const store = getAuthStore?.();
+        const refreshed = await store?.refreshToken();
         if (refreshed) {
-          const token = useAuthStore.getState().accessToken;
+          const token = getAuthStore?.()?.accessToken;
           originalRequest.headers.Authorization = `Bearer ${token}`;
           return apiClient(originalRequest);
         }
       } catch {
-        // refresh failed, redirect to login
+        // refresh failed
       }
-      const { useAuthStore } = require('../stores/authStore');
-      useAuthStore.getState().logout();
+      getAuthStore?.()?.logout();
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -1048,6 +1079,8 @@ apiClient.interceptors.response.use(
 
 export default apiClient;
 ```
+
+> **Note:** In `authStore.ts`, call `setAuthStoreAccessor(() => useAuthStore.getState())` at module init to wire up the accessor. This avoids ESM circular import issues.
 
 - [ ] **Step 4: Create API endpoint modules**
 
@@ -1159,6 +1192,49 @@ export async function refreshAccessToken(): Promise<{ access_token: string }> {
 export async function getProfile(): Promise<User> {
   const { data } = await apiClient.get<User>('/auth/me');
   return data;
+}
+```
+
+Create `src/api/endpoints/inventory.ts`:
+
+```typescript
+// src/api/endpoints/inventory.ts
+import apiClient from '../client';
+import type { InventoryStat } from '../../types';
+
+export async function getItemInventory(id: number): Promise<InventoryStat[]> {
+  const { data } = await apiClient.get<InventoryStat[]>(`/items/${id}/inventory`);
+  return data;
+}
+```
+
+Create `src/api/endpoints/favorites.ts`:
+
+```typescript
+// src/api/endpoints/favorites.ts
+import apiClient from '../client';
+
+export interface FavoriteItem {
+  id: number;
+  good_id: number;
+  name: string;
+  market_hash_name: string;
+  added_at: string;
+  notes: string;
+}
+
+export async function getFavorites(): Promise<FavoriteItem[]> {
+  const { data } = await apiClient.get<FavoriteItem[]>('/favorites');
+  return data;
+}
+
+export async function addFavorite(goodId: number, name: string): Promise<FavoriteItem> {
+  const { data } = await apiClient.post<FavoriteItem>('/favorites', { good_id: goodId, name });
+  return data;
+}
+
+export async function removeFavorite(id: number): Promise<void> {
+  await apiClient.delete(`/favorites/${id}`);
 }
 ```
 
@@ -2521,7 +2597,7 @@ export default function Dashboard() {
 
   const { data: hotItems = [], isLoading: hotLoading } = useQuery({
     queryKey: QUERY_KEYS.scoutRankings('hot', 1),
-    queryFn: () => getRankings({ sort_by: 'buff_price_chg' }, 1, 8),
+    queryFn: () => getRankings({ '排序': ['价格_价格上升(百分比)_近7天'] }, 1, 8),
   });
 
   if (marketLoading) {
@@ -2780,11 +2856,15 @@ import type { RankItem } from '../../types';
 
 const { Title } = Typography;
 
-const RANK_FILTERS: Record<string, Record<string, unknown>> = {
-  '日涨幅': { sort_by: 'sell_price_rate_1', order: 'desc' },
-  '周涨幅': { sort_by: 'sell_price_rate_7', order: 'desc' },
-  '月涨幅': { sort_by: 'sell_price_rate_30', order: 'desc' },
-  '日跌幅': { sort_by: 'sell_price_rate_1', order: 'asc' },
+// Filter keys match the external CSQAQ API format (Chinese keys)
+// See: src/csqaq/infrastructure/csqaq_client/rank_filters.py
+const RANK_FILTERS: Record<string, Record<string, string[]>> = {
+  '周涨幅': { '排序': ['价格_价格上升(百分比)_近7天'] },
+  '周跌幅': { '排序': ['价格_价格下降(百分比)_近7天'] },
+  '成交量': { '排序': ['成交量_Steam日成交量'] },
+  '存世量': { '排序': ['存世量_存世量_升序'] },
+  '在售减少': { '排序': ['在售数量_数量减少_近7天'] },
+  '求购增多': { '排序': ['求购数量_数量增多_近7天'] },
 };
 
 export default function Scout() {
@@ -3196,16 +3276,33 @@ async def _run_analysis(
                         "message": item.message,
                     })
                 elif isinstance(item, RunQueryResult):
+                    result_payload = {
+                        "summary": item.summary,
+                        "action_detail": item.action_detail,
+                        "risk_level": item.risk_level,
+                        "requires_confirmation": item.requires_confirmation,
+                    }
                     await websocket.send_json({
                         "type": "result",
                         "task_id": task_id,
-                        "payload": {
-                            "summary": item.summary,
-                            "action_detail": item.action_detail,
-                            "risk_level": item.risk_level,
-                            "requires_confirmation": item.requires_confirmation,
-                        },
+                        "payload": result_payload,
                     })
+                    # Record query history for authenticated users
+                    if hasattr(websocket, '_user_id') and websocket._user_id:
+                        try:
+                            from csqaq.infrastructure.database.models import QueryHistory
+                            async with app.database.session() as session:
+                                record = QueryHistory(
+                                    user_id=websocket._user_id,
+                                    query_text=query[:200],
+                                    intent=result_payload.get("intent", ""),
+                                    summary=item.summary,
+                                    risk_level=item.risk_level,
+                                )
+                                session.add(record)
+                                await session.commit()
+                        except Exception as hist_err:
+                            logger.warning("Failed to save query history: %s", hist_err)
     except asyncio.CancelledError:
         try:
             await websocket.send_json({
@@ -3824,7 +3921,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from csqaq.api.deps import get_app, get_current_user
@@ -3915,7 +4012,7 @@ async def register(body: RegisterRequest, response: Response, app: App = Depends
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=False,  # True in production
+            secure=(app.settings.mode == "server"),
             samesite="strict",
             max_age=app.settings.refresh_token_expire_days * 86400,
         )
@@ -3956,7 +4053,7 @@ async def login(body: LoginRequest, response: Response, app: App = Depends(get_a
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=False,
+            secure=(app.settings.mode == "server"),
             samesite="strict",
             max_age=app.settings.refresh_token_expire_days * 86400,
         )
@@ -3970,11 +4067,31 @@ async def login(body: LoginRequest, response: Response, app: App = Depends(get_a
 
 @router.post("/refresh")
 async def refresh(
+    request: Request,
     app: App = Depends(get_app),
-    # In production, read from cookie; for now accept both
 ):
-    # This would read the httpOnly cookie in production
-    raise HTTPException(status_code=501, detail="Refresh via cookie not yet implemented")
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    try:
+        payload = jwt.decode(refresh_token, app.settings.secret_key, algorithms=["HS256"])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user_id = int(payload["sub"])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    async with app.database.session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    new_access = create_access_token(
+        {"sub": str(user.id), "username": user.username},
+        app.settings.secret_key, app.settings.access_token_expire_minutes,
+    )
+    return {"access_token": new_access, "token_type": "bearer"}
 
 
 @router.get("/me")
