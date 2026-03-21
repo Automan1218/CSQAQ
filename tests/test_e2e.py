@@ -125,8 +125,11 @@ async def test_full_parallel_item_pipeline(mock_item_api, mock_market_api, mock_
     )
     result = await flow.ainvoke({
         "messages": [], "query": "AK红线", "good_name": "AK红线",
+        "good_id": None, "item_detail": None,
         "item_context": None, "market_context": None, "scout_context": None,
+        "inventory_context": None,
         "item_error": None, "market_error": None, "scout_error": None,
+        "inventory_error": None,
         "risk_level": None, "requires_confirmation": False,
         "summary": None, "action_detail": None,
     })
@@ -175,3 +178,42 @@ async def test_hitl_high_risk_result(mock_item_api):
     assert result["requires_confirmation"] is True
     assert result["summary"] is not None
     assert result["action_detail"] is not None
+
+
+@pytest.mark.asyncio
+async def test_full_inventory_pipeline(mock_item_api):
+    """Complete inventory pipeline: resolve -> fetch inventory -> analyze -> interpret -> advise."""
+    factory = ModelFactory()
+    mock_analyst = AsyncMock()
+    mock_analyst.ainvoke.return_value = AIMessage(content="存世量持续下降，疑似吸货行为")
+    mock_advisor = AsyncMock()
+    mock_advisor.ainvoke.return_value = AIMessage(
+        content='{"summary": "存世量下降，符合吸货模式", "action_detail": "可小额建仓试探", "risk_level": "medium"}'
+    )
+
+    def mock_create(role):
+        if role == "advisor":
+            return mock_advisor
+        return mock_analyst
+
+    factory.register("analyst", provider="openai", model="gpt-4o")
+    factory.register("advisor", provider="openai", model="gpt-5")
+    factory.create = mock_create
+
+    from csqaq.flows.inventory_flow import build_inventory_flow
+    flow = build_inventory_flow(item_api=mock_item_api, model_factory=factory)
+    result = await flow.ainvoke({
+        "messages": [], "query": "AK红线存世量趋势",
+        "good_name": "AK红线",
+        "good_id": None, "item_detail": None,
+        "inventory_stats": None, "inventory_report": None,
+        "inventory_context": None,
+        "item_context": None, "market_context": None, "scout_context": None,
+        "summary": None, "action_detail": None,
+        "risk_level": None, "requires_confirmation": False,
+        "error": None,
+    })
+
+    assert result.get("summary") is not None
+    assert result.get("risk_level") == "medium"
+    assert result.get("inventory_context") is not None
