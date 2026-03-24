@@ -38,6 +38,7 @@ server = [
     "python-jose[cryptography]>=3.3",
     "passlib[bcrypt]>=1.7",
     "cryptography>=43.0",
+    "alembic>=1.13",
 ]
 
 [project.scripts]
